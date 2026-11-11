@@ -101,3 +101,62 @@ def test_target_times_and_availability():
     # At origin 2: (0, step 1) and (0, step 2) and (1, step 1) are known.
     assert mask[0].tolist() == [[True, True], [True, False], [False, False]]
     assert mask[1].tolist() == [[True, True], [True, True], [True, False]]
+
+
+def test_row_subsets_remember_their_timeline():
+    a = archive(forecasts=torch.randn(10, 2, 3))
+    subset = a.select(torch.tensor([2, 4, 6, 8]))
+    assert subset.timeline is a and subset.rows.tolist() == [2, 4, 6, 8]
+    nested = subset.select(torch.tensor([1, 3]))
+    assert nested.timeline is a and nested.rows.tolist() == [4, 8]
+    assert torch.equal(nested.residuals, a.residuals[[4, 8]])
+    # The timeline is context, not data: it is not hashed, and head() drops it.
+    alone = nested.head(2)
+    assert alone.timeline is None and alone.fingerprint() == nested.fingerprint()
+    assert "rows of a timeline with T=10" in repr(nested)
+    assert nested.to("cpu").timeline.num_origins == 10
+
+
+def test_splits_end_their_timeline_with_their_last_row():
+    a = archive(splits={"fit": torch.arange(0, 4), "calibration": torch.arange(5, 8)})
+    fit, calibration = a.split("fit"), a.split("calibration")
+    assert fit.rows.tolist() == [0, 1, 2, 3] and len(fit.timeline) == 4
+    assert calibration.rows.tolist() == [5, 6, 7] and len(calibration.timeline) == 8
+    assert fit.timeline.splits is None
+    whole = a.select(a.splits["calibration"])  # select() keeps the whole timeline
+    assert whole.timeline is a
+
+
+def test_head_keeps_the_leading_rows():
+    a = archive(splits={"calibration": torch.arange(0, 4), "test": torch.arange(6, 10)})
+    head = a.head(5)
+    assert head.num_origins == 5 and head.splits is None and head.timeline is None
+    assert torch.equal(head.residuals, a.residuals[:5])
+    with pytest.raises(ValueError, match="num_rows"):
+        a.head(11)
+
+
+def test_row_subsets_must_match_their_timeline():
+    a = archive()
+    rows = torch.tensor([1, 2])
+    subset = a.select(rows)
+    with pytest.raises(ValueError, match="together"):
+        replace(subset, timeline=None)
+    with pytest.raises(ValueError, match="match"):
+        replace(subset, rows=torch.tensor([1, 3]))
+    with pytest.raises(ValueError, match="whole archive"):
+        replace(subset, timeline=subset)
+    with pytest.raises(ValueError, match="positions"):
+        replace(subset, rows=torch.tensor([2, 1]))
+
+
+def test_known_counts_are_prefixes_of_the_availability_mask():
+    origins, steps = torch.tensor([0, 2, 3, 7, 8, 11]), torch.tensor([1, 3])
+    queries = torch.arange(0, 16)
+    a = archive(num_origins=6, horizon=2, origins=origins, steps=steps)
+    counts = a.known_counts(queries)
+    mask = availability_mask(origins, queries, steps)
+    assert counts.shape == (16, 2)
+    assert torch.equal(counts, mask.sum(dim=1))
+    prefix = torch.arange(6)[None, :, None] < counts[:, None, :]
+    assert torch.equal(mask, prefix)

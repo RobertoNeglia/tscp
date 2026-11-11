@@ -37,6 +37,9 @@ class Interval(Region):
     def dimension(self) -> int:
         return 1
 
+    def tensors(self) -> dict[str, Tensor]:
+        return {"lower": self.lower, "upper": self.upper}
+
     def is_empty(self) -> Tensor:
         """True where ``lower > upper``."""
         return self.upper < self.lower
@@ -54,15 +57,6 @@ class Interval(Region):
 
     def to_target(self, forecasts: Tensor) -> "Interval":
         return Interval(self.lower + forecasts, self.upper + forecasts)
-
-    def __getitem__(self, index) -> "Interval":
-        return Interval(self.lower[index], self.upper[index])
-
-    def to(self, device: torch.device | str) -> "Interval":
-        return Interval(self.lower.to(device), self.upper.to(device))
-
-    def __repr__(self) -> str:
-        return f"Interval(batch_shape={tuple(self.batch_shape)})"
 
 
 __all__ = ["Interval"]

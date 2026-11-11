@@ -31,12 +31,12 @@ def test_unbounded_and_empty_regions_are_counted_not_averaged():
     residuals = torch.tensor([0.0, 5.0, 0.0, 3.0]).reshape(4, 1, 1)
     archive = ResidualArchive(residuals=residuals, origins=torch.arange(4), steps=torch.tensor([1]))
     report = evaluate(Interval(lower, upper), archive, alpha=0.1)
-    assert report["num_targets"] == 4
-    assert report["coverage"] == 0.5  # the unbounded one covers, the empty one misses
-    assert report["infinite_fraction"] == 0.25
-    assert report["empty_fraction"] == 0.25
-    assert report["log_volume_per_dim"] == pytest.approx((math.log(2) + math.log(4)) / 2)
-    assert report["winkler"] == pytest.approx((2 + (4 + 20 * 1)) / 2)
+    assert report.num_regions == 4
+    assert report.coverage == 0.5  # the unbounded one covers, the empty one misses
+    assert report.infinite_fraction == 0.25
+    assert report.empty_fraction == 0.25
+    assert report.log_volume_per_dim == pytest.approx((math.log(2) + math.log(4)) / 2)
+    assert report.winkler == pytest.approx((2 + (4 + 20 * 1)) / 2)
 
 
 def test_evaluate_reports_conditional_coverage_on_request():
@@ -44,11 +44,11 @@ def test_evaluate_reports_conditional_coverage_on_request():
     archive = ResidualArchive(residuals=residuals, origins=torch.arange(4), steps=torch.tensor([1]))
     interval = Interval(torch.full((4, 1, 1), -1.0), torch.full((4, 1, 1), 1.0))
     report = evaluate(interval, archive, 0.1, window=2, groups=torch.tensor([0, 1, 0, 1]))
-    assert report["worst_window_coverage"] == 0.5
-    assert report["grouped_coverage"] == {0: 1.0, 1: 0.5}
+    assert report.worst_window_coverage == 0.5
+    assert report.grouped_coverage == {0: 1.0, 1: 0.5}
 
 
 def test_evaluate_checks_shapes():
     archive = ResidualArchive(residuals=torch.zeros(4, 1, 1), origins=torch.arange(4), steps=[1])
-    with pytest.raises(ValueError, match="one element per residual"):
+    with pytest.raises(ValueError, match="batch shape"):
         evaluate(Interval(torch.zeros(3, 1, 1), torch.ones(3, 1, 1)), archive, 0.1)

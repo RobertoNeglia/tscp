@@ -6,6 +6,7 @@ grows during the test period, every feature built from past residuals and every 
 update goes through this rule, so nothing sees a residual before its target time.
 """
 
+import torch
 from torch import Tensor
 
 
@@ -29,4 +30,26 @@ def availability_mask(pool_origins: Tensor, query_origins: Tensor, offsets: Tens
     return (pool_origins[None, :, None] + offsets[None, None, :]) <= query_origins[:, None, None]
 
 
-__all__ = ["availability_mask", "target_times"]
+def known_counts(origins: Tensor, steps: Tensor, query_origins: Tensor) -> Tensor:
+    """Return how many leading rows have a known residual at each query origin, per step.
+
+    Rows are in time order, so the residuals of step ``h`` known at origin ``t`` are always
+    a prefix of the rows: those with ``origin + h <= t``. This is the rule of
+    :func:`availability_mask` in a form whose size does not grow with the pool, for
+    components that read the history of an archive.
+
+    Args:
+        origins: ``[T]`` origins of the rows, strictly increasing.
+        steps: ``[H]`` horizon steps.
+        query_origins: ``[Q]`` origins at which the history is read.
+
+    Returns:
+        ``[Q, H]`` counts: at query ``q``, the residuals of step ``h`` in rows
+        ``0 .. counts[q, h] - 1`` are known, and no others.
+    """
+    times = (origins[None, :] + steps[:, None]).contiguous()
+    queries = query_origins[None, :].expand(steps.numel(), -1).contiguous()
+    return torch.searchsorted(times, queries, right=True).T
+
+
+__all__ = ["availability_mask", "known_counts", "target_times"]

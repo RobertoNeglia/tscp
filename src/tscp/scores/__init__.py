@@ -2,5 +2,8 @@
 
 from .absolute import AbsoluteScore
 from .base import Score
+from .cqr import CQRScore
+from .normalized import NormalizedScore
+from .signed import SignedScore
 
-__all__ = ["AbsoluteScore", "Score"]
+__all__ = ["AbsoluteScore", "CQRScore", "NormalizedScore", "Score", "SignedScore"]

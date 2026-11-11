@@ -39,9 +39,9 @@ def main() -> None:
             region = method.fit(archive).calibrate(archive).predict(archive)
             report = evaluate(region, test, alpha, window=config["window"])
             print(
-                f"{dataset:18} {archive.horizon:>2} {name:6} {report['coverage']:8.3f} "
-                f"{report['worst_window_coverage']:6.3f} {report['log_volume_per_dim']:9.3f} "
-                f"{report['infinite_fraction']:9.3f}"
+                f"{dataset:18} {archive.horizon:>2} {name:6} {report.coverage:8.3f} "
+                f"{report.worst_window_coverage:6.3f} {report.log_volume_per_dim:9.3f} "
+                f"{report.infinite_fraction:9.3f}"
             )
 
 

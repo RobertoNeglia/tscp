@@ -18,11 +18,14 @@ class Component(ConfigMixin, torch.nn.Module):
     (:meth:`~tscp.utils.config.ConfigMixin.to_config`).
     """
 
-    def fit(self, archive: "ResidualArchive") -> Self:
+    def fit(self, train: "ResidualArchive", validation: "ResidualArchive | None" = None) -> Self:
         """Fit trainable state.
 
-        The composer calls this only with the component-fitting split
-        (``archive.split("fit")``), and only for components that override it.
+        The composer calls this only for components that override it. ``train`` is the
+        component-fitting split, ``archive.split("fit")``; ``validation`` is the
+        ``validation`` split when the plan has one, for early stopping and model choice.
+        Both are row subsets whose timeline ends where the split ends: the history before
+        and within the split is there, and nothing after it.
         """
         return self
 

@@ -1,11 +1,10 @@
 """Adaptive conformal inference."""
 
-from collections.abc import Callable
-
 import torch
 from torch import Tensor
 
 from tscp.online.base import OnlineUpdate
+from tscp.quantile import ScoreDistribution
 
 
 class ACIUpdate(OnlineUpdate):
@@ -26,17 +25,24 @@ class ACIUpdate(OnlineUpdate):
         if not gamma > 0:
             raise ValueError("gamma must be positive")
         self.gamma = float(gamma)
-        self.target: float | None = None
+        self.register_buffer("target", None, persistent=False)
         self.register_buffer("level", None, persistent=False)
 
-    def reset(self, alpha: float, shape: tuple[int, ...], device: torch.device) -> None:
-        self.target = float(alpha)
-        self.level = torch.full(tuple(shape), self.target, dtype=torch.float64, device=device)
+    def reset(self, alpha: Tensor, device: torch.device) -> None:
+        self.target = torch.as_tensor(alpha, dtype=torch.float64, device=device).clone()
+        self.level = self.target.clone()
 
-    def threshold(self, quantile: Callable[[Tensor], Tensor]) -> Tensor:
-        return quantile(self.level)
+    def threshold(self, t: int, distribution: ScoreDistribution) -> Tensor:
+        return distribution.threshold(self.level)
 
-    def observe(self, scores: Tensor, thresholds: Tensor, released: Tensor) -> None:
+    def observe(
+        self,
+        t: int,
+        scores: Tensor,
+        thresholds: Tensor,
+        released: Tensor,
+        levels: Tensor | None = None,
+    ) -> None:
         miss = (scores > thresholds).to(torch.float64)
         stepped = self.level + self.gamma * (self.target - miss)
         self.level = torch.where(released, stepped, self.level)

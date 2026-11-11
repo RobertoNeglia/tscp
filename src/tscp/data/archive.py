@@ -7,7 +7,7 @@ from typing import Any
 import torch
 from torch import Tensor
 
-from tscp.data.availability import target_times
+from tscp.data.availability import known_counts, target_times
 from tscp.data.splits import SplitPlan
 from tscp.utils.hashing import array_fingerprint
 
@@ -63,6 +63,11 @@ class ResidualArchive:
     Rows are forecast origins. The archive holds the whole timeline and a
     :class:`~tscp.data.SplitPlan`, so the same archive can be split again.
 
+    A row subset, made by :meth:`select` or :meth:`split`, remembers the archive its rows
+    came from as its ``timeline``, with their positions in it as ``rows``. Components read
+    the history before a row from there, through :meth:`known_counts`, so nothing they
+    compute depends on a residual before its target time.
+
     Args:
         residuals: ``[T, H, N]`` truth minus forecast.
         origins: ``[T]`` forecast origins, in base time steps, strictly increasing.
@@ -78,6 +83,10 @@ class ResidualArchive:
         graph: Graph over the ``N`` series.
         series: Names of the ``N`` series.
         provenance: JSON-serializable metadata: dataset, forecaster, horizon, protocol.
+        timeline: For a row subset, the whole archive its rows were taken from, or the part
+            of it up to where the subset's holder may look. Set by :meth:`select` and
+            :meth:`split`; never part of the fingerprint.
+        rows: For a row subset, the positions of its rows in ``timeline``.
     """
 
     residuals: Tensor
@@ -92,6 +101,8 @@ class ResidualArchive:
     graph: Graph | None = None
     series: tuple[str, ...] = ()
     provenance: Mapping[str, Any] = field(default_factory=dict)
+    timeline: "ResidualArchive | None" = None
+    rows: Tensor | None = None
 
     def __post_init__(self):
         assign = object.__setattr__
@@ -172,6 +183,26 @@ class ResidualArchive:
             assign(self, "splits", splits)
         assign(self, "provenance", dict(self.provenance))
 
+        if (self.timeline is None) != (self.rows is None):
+            raise ValueError("timeline and rows must be given together")
+        if self.timeline is not None:
+            timeline = self.timeline
+            if timeline.timeline is not None:
+                raise ValueError("a timeline must be a whole archive, not a row subset")
+            if timeline.device != device:
+                raise ValueError("a row subset must be on the device of its timeline")
+            rows = _int_vector(self.rows, "rows", num_origins, device)
+            if rows[0] < 0 or rows[-1] >= len(timeline) or (rows.diff() <= 0).any():
+                raise ValueError("rows must be strictly increasing positions in the timeline")
+            same = (
+                torch.equal(timeline.origins[rows], origins)
+                and torch.equal(timeline.steps, steps)
+                and timeline.num_series == num_series
+            )
+            if not same:
+                raise ValueError("rows must match the origins, steps and series of the timeline")
+            assign(self, "rows", rows)
+
     # -- shape and time ------------------------------------------------------------------
 
     def __len__(self) -> int:
@@ -201,10 +232,24 @@ class ResidualArchive:
         """``[T, H]`` target time of each (origin, step)."""
         return target_times(self.origins, self.steps)
 
+    def known_counts(self, origins: Tensor) -> Tensor:
+        """``[Q, H]``: how many leading rows have a known residual at each origin, per step.
+
+        At ``origins[q]`` the residuals of step ``h`` in rows ``0 .. counts[q, h] - 1`` are
+        known, and no others (see :func:`~tscp.data.known_counts`). Unobserved targets
+        among them are marked by :attr:`observed`.
+        """
+        origins = torch.as_tensor(origins, device=self.device)
+        return known_counts(self.origins, self.steps, origins)
+
     # -- rows ----------------------------------------------------------------------------
 
     def select(self, rows: Tensor) -> "ResidualArchive":
-        """Return the archive restricted to ``rows`` (strictly increasing), without splits."""
+        """Return the archive restricted to ``rows`` (strictly increasing), without splits.
+
+        The result remembers this archive's timeline (this archive itself, unless it is a
+        row subset already), with the positions of the selected rows in it.
+        """
         rows = torch.as_tensor(rows, device=self.device)
         if rows.ndim != 1 or rows.dtype.is_floating_point or rows.dtype == torch.bool:
             raise ValueError("rows must be a vector of integer indices")
@@ -214,27 +259,46 @@ class ResidualArchive:
         if rows[0] < 0 or rows[-1] >= len(self) or (rows.diff() <= 0).any():
             raise ValueError("rows must be strictly increasing indices into the archive")
 
+        if self.timeline is None:
+            timeline, positions = self, rows
+        else:
+            timeline, positions = self.timeline, self.rows[rows]
+        return self._take(rows, timeline=timeline, rows=positions)
+
+    def head(self, num_rows: int) -> "ResidualArchive":
+        """Return the first ``num_rows`` rows as a whole archive, without splits."""
+        if not 1 <= num_rows <= len(self):
+            raise ValueError(f"num_rows must lie between 1 and {len(self)}")
+        return self._take(slice(0, num_rows), timeline=None, rows=None)
+
+    def _take(self, index, **fields) -> "ResidualArchive":
         def take(value):
-            return None if value is None else value[rows]
+            return None if value is None else value[index]
 
         return replace(
             self,
-            residuals=self.residuals[rows],
-            origins=self.origins[rows],
+            residuals=self.residuals[index],
+            origins=self.origins[index],
             splits=None,
             forecasts=take(self.forecasts),
-            outputs={name: value[rows] for name, value in self.outputs.items()},
+            outputs={name: value[index] for name, value in self.outputs.items()},
             context=take(self.context),
             observed=take(self.observed),
+            **fields,
         )
 
     def split(self, name: str) -> "ResidualArchive":
-        """Return the rows of one split, such as ``archive.split("calibration")``."""
+        """Return the rows of one split, such as ``archive.split("calibration")``.
+
+        The timeline of the result ends with the split's last row: it holds the history
+        before and within the split, and nothing after it.
+        """
         if self.splits is None:
             raise KeyError("this archive has no split plan; it is already a row subset")
         if name not in self.splits:
             raise KeyError(f"no {name!r} split; this archive has {self.splits.names}")
-        return self.select(self.splits[name])
+        rows = self.splits[name]
+        return self.head(int(rows[-1]) + 1).select(rows)
 
     def to(self, device: torch.device | str) -> "ResidualArchive":
         def move(value):
@@ -251,6 +315,8 @@ class ResidualArchive:
             context=move(self.context),
             observed=move(self.observed),
             graph=None if self.graph is None else self.graph.to(device),
+            timeline=None if self.timeline is None else self.timeline.to(device),
+            rows=move(self.rows),
         )
 
     # -- identity ------------------------------------------------------------------------
@@ -295,6 +361,8 @@ class ResidualArchive:
         extras += [f"output.{name}" for name in self.outputs]
         if extras:
             parts.append(f"with=({', '.join(extras)})")
+        if self.timeline is not None:
+            parts.append(f"rows of a timeline with T={self.timeline.num_origins}")
         return f"ResidualArchive({', '.join(parts)})"
 
 

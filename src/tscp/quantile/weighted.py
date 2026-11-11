@@ -5,17 +5,12 @@ import math
 import torch
 from torch import Tensor
 
-from tscp.quantile.base import QuantileModel
+from tscp.data import ResidualArchive
+from tscp.quantile.base import Pool, QuantileModel
+from tscp.quantile.distribution import EmpiricalDistribution
 from tscp.typing import Alpha
 
-# Levels within this tolerance of a cumulative weight count as reached, so float rounding
-# in 1 - alpha or in the cumulative sums cannot shift the threshold by one score.
-_TOLERANCE = 1e-9
 _MAX_ELEMENTS = 2**23
-
-
-def _levels(alpha: Alpha, device: torch.device) -> Tensor:
-    return 1 - torch.as_tensor(alpha, dtype=torch.float64, device=device)
 
 
 def uniform_quantile(scores: Tensor, alpha: Alpha, test_weight: float = 1.0) -> Tensor:
@@ -34,19 +29,8 @@ def uniform_quantile(scores: Tensor, alpha: Alpha, test_weight: float = 1.0) -> 
     Returns:
         Thresholds of shape ``broadcast(alpha.shape, kept)``, in the dtype of ``scores``.
     """
-    num_scores = scores.shape[0]
-    kept = tuple(scores.shape[1:])
-    level = _levels(alpha, scores.device)
-    shape = torch.broadcast_shapes(level.shape, kept)
-    level = level.broadcast_to(shape)
     ordered = torch.sort(scores, dim=0).values
-    rank = torch.ceil((level - _TOLERANCE) * (num_scores + test_weight))
-    index = (rank - 1).clamp(0, num_scores - 1).to(torch.int64).reshape(-1, *kept)
-    source = ordered.unsqueeze(0).expand(index.shape[0], num_scores, *kept)
-    values = torch.gather(source, 1, index.unsqueeze(1)).squeeze(1).reshape(shape)
-    values = torch.where(rank > num_scores, torch.inf, values.to(torch.float64))
-    values = torch.where(level <= 0, -torch.inf, values)
-    return values.to(scores.dtype)
+    return EmpiricalDistribution(ordered, None, test_weight).threshold(alpha)
 
 
 def weighted_quantile(
@@ -70,42 +54,27 @@ def weighted_quantile(
     Returns:
         Thresholds ``[Q, *kept]``, in the dtype of ``scores``.
     """
-    num_scores = scores.shape[0]
-    kept = tuple(scores.shape[1:])
+    num_scores, kept = scores.shape[0], tuple(scores.shape[1:])
     if weights.ndim < 2 or weights.shape[1] != num_scores:
         raise ValueError("weights must have shape [Q, P] or [Q, P, *kept] with P pool scores")
-    weights = weights.reshape(*weights.shape, *([1] * (2 + len(kept) - weights.ndim)))
     num_queries = weights.shape[0]
-    level = _levels(alpha, scores.device).broadcast_to((num_queries, *kept))
+    alpha = torch.as_tensor(alpha, dtype=torch.float64, device=scores.device)
+    alpha = alpha.broadcast_to((num_queries, *kept))
     ordered, order = torch.sort(scores, dim=0)
-    ordered = ordered.to(torch.float64)
-    out = torch.empty((num_queries, *kept), dtype=torch.float64, device=scores.device)
+    out = torch.empty((num_queries, *kept), dtype=scores.dtype, device=scores.device)
     chunk = max(1, _MAX_ELEMENTS // max(1, num_scores * math.prod(kept)))
     for start in range(0, num_queries, chunk):
         stop = min(start + chunk, num_queries)
-        full = (stop - start, num_scores, *kept)
-        part = weights[start:stop].to(torch.float64).broadcast_to(full)
-        part = torch.gather(part, 1, order.unsqueeze(0).expand(full))
-        total = part.sum(dim=1, keepdim=True) + test_weight
-        cumulative = torch.cumsum(part, dim=1) / total
-        part_level = level[start:stop]
-        reached = cumulative >= (part_level - _TOLERANCE).unsqueeze(1)
-        # Cumulative weights never decrease, so the first reached index is the count of
-        # unreached ones; it equals P when the level is never reached.
-        first = (~reached).sum(dim=1)
-        values = torch.gather(
-            ordered.unsqueeze(0).expand(full), 1, first.clamp(max=num_scores - 1).unsqueeze(1)
-        ).squeeze(1)
-        values = torch.where(first >= num_scores, torch.inf, values)
-        out[start:stop] = torch.where(part_level <= 0, -torch.inf, values)
-    return out.to(scores.dtype)
+        part = EmpiricalDistribution.weighted(ordered, order, weights[start:stop], test_weight)
+        out[start:stop] = part.threshold(alpha[start:stop])
+    return out
 
 
 class WeightedQuantile(QuantileModel):
     """Empirical conformal quantile of (weighted) scores, with the test point at ``+inf``.
 
-    With ``weights=None`` it takes the uniform path (:func:`uniform_quantile`), which
-    sorts the pool once and serves every query; otherwise :func:`weighted_quantile`.
+    Returns an :class:`~tscp.quantile.EmpiricalDistribution`: one shared by every query
+    when ``weights`` is None, one per query otherwise. Either way the pool is sorted once.
 
     Args:
         test_weight: Weight of the test point relative to the pool weights; 1 for split
@@ -118,12 +87,15 @@ class WeightedQuantile(QuantileModel):
             raise ValueError("test_weight must be nonnegative")
         self.test_weight = float(test_weight)
 
-    def forward(self, scores: Tensor, weights: Tensor | None, alpha: Alpha) -> Tensor:
+    def forward(
+        self, pool: Pool, weights: Tensor | None, query: ResidualArchive
+    ) -> EmpiricalDistribution:
+        ordered, order = pool.sorted()
         if weights is None:
-            return uniform_quantile(scores, alpha, self.test_weight)
+            return EmpiricalDistribution(ordered, None, self.test_weight)
         if (weights < 0).any() or weights.isnan().any():
             raise ValueError("weights must be nonnegative numbers")
-        return weighted_quantile(scores, weights, alpha, self.test_weight)
+        return EmpiricalDistribution.weighted(ordered, order, weights, self.test_weight)
 
 
 __all__ = ["WeightedQuantile", "uniform_quantile", "weighted_quantile"]

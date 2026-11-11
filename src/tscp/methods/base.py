@@ -1,19 +1,19 @@
 """The composer that runs one component per axis as a conformal method."""
 
 import math
-from functools import partial
+from collections.abc import Iterator
 from typing import Self
 
 import torch
 from torch import Tensor
 
 from tscp.data import ResidualArchive, availability_mask
+from tscp.methods.engine import OnlineEngine, replay
 from tscp.online import OnlineUpdate
-from tscp.quantile import QuantileModel, WeightedQuantile
+from tscp.quantile import Pool, QuantileModel, ScoreDistribution, WeightedQuantile
 from tscp.regions import Region
 from tscp.scores import Score
 from tscp.sources import HoldoutSource, Source
-from tscp.typing import Alpha
 from tscp.utils import Component
 from tscp.weights import Weights
 
@@ -33,18 +33,21 @@ _MAX_ELEMENTS = 2**23
 class ConformalPredictor(Component):
     """A conformal method: one component per axis, run through a fixed lifecycle.
 
-    1. :meth:`fit` fits every trainable component on ``archive.split("fit")``, and on
-       nothing else.
+    1. :meth:`fit` fits every trainable component on ``archive.split("fit")``, with the
+       ``validation`` split if there is one, and on nothing else.
     2. :meth:`calibrate` scores the source's rows, the calibration split.
     3. :meth:`predict` makes one region per test origin, in residual coordinates.
 
     Evaluation is a separate step (:func:`tscp.metrics.evaluate`).
 
-    :meth:`predict` is vectorized unless an online update is set; then it walks the test
-    origins in order and hands the update each outcome once its target time has passed.
-    An expanding source adds each test residual to the pool by the same rule. For a
-    per-step score, step ``h`` of an origin becomes known ``h`` base steps after it; for
-    a score over the whole horizon, after the last step.
+    For each chunk of test origins, :meth:`predict` asks the quantile model for the
+    conformal distribution of the score given the pool and its weights. Without an online
+    update it reads every threshold from those distributions at the score's levels. With
+    one, it answers the test origins in time order and hands the update each outcome once
+    its target time has passed (:mod:`tscp.methods.engine`). An expanding source adds each
+    test residual to the pool by the same rule. For a per-step score, step ``h`` of an
+    origin becomes known ``h`` base steps after it; for a score over the whole horizon,
+    after the last step.
 
     Args:
         score: Axis 2, how an error becomes a number.
@@ -98,24 +101,25 @@ class ConformalPredictor(Component):
     # -- lifecycle -----------------------------------------------------------------------
 
     def fit(self, archive: ResidualArchive) -> Self:
-        """Fit every trainable component on the ``fit`` split only."""
+        """Fit every trainable component on the ``fit`` split, and ``validation`` if any."""
         trainable = [axis for axis, c in self.components().items() if c.is_trainable]
         if not trainable:
             return self
         if archive.splits is None or "fit" not in archive.splits:
             names = ", ".join(trainable)
             raise ValueError(f"{names} must be fitted, and the archive has no 'fit' split")
-        fit_rows = archive.split("fit")
+        train = archive.split("fit")
+        validation = archive.split("validation") if "validation" in archive.splits else None
         for axis in trainable:
-            getattr(self, axis).fit(fit_rows)
+            getattr(self, axis).fit(train, validation)
         return self
 
     def calibrate(self, archive: ResidualArchive) -> Self:
         """Score the calibration pool of ``archive``."""
         pool = archive.select(self.source.rows(archive))
-        self.pool_scores = self.score(pool.residuals, pool.outputs)
+        self.pool_scores = self.score(pool)
         self.pool_origins = pool.origins
-        self.pool_valid = self._valid(pool)
+        self.pool_valid = self.score.valid(pool)
         return self
 
     def predict(self, archive: ResidualArchive) -> Region:
@@ -129,111 +133,73 @@ class ConformalPredictor(Component):
             raise ValueError("predict() needs an archive with a 'test' split")
         test_rows = archive.splits["test"]
         query = archive.select(test_rows)
-        query_scores = self.score(query.residuals, query.outputs)
-        query_valid = self._valid(query)
+        query_scores = self.score(query)
+        query_valid = self.score.valid(query)
         if self.source.expanding:
             # Test residuals join the pool; the availability mask releases each one only
             # after its target time.
-            pool = archive.select(torch.cat([rows, test_rows]))
-            scores = torch.cat([self.pool_scores, query_scores])
-            valid = _concat_valid(self.pool_valid, query_valid, self.pool_scores, query_scores)
+            pool = Pool(
+                torch.cat([self.pool_scores, query_scores]),
+                archive.select(torch.cat([rows, test_rows])),
+                _concat_valid(self.pool_valid, query_valid, self.pool_scores, query_scores),
+            )
         else:
-            pool, scores, valid = archive.select(rows), self.pool_scores, self.pool_valid
-        thresholds = self._thresholds(pool, scores, valid, query, query_scores, query_valid)
-        return self.score.region(thresholds, query.outputs)
+            pool = Pool(self.pool_scores, archive.select(rows), self.pool_valid)
+        thresholds = self._thresholds(pool, query, query_scores, query_valid)
+        return self.score.region(thresholds, query)
 
     # -- internals -----------------------------------------------------------------------
 
-    def _valid(self, archive: ResidualArchive) -> Tensor | None:
-        """Return which kept elements have an observed target, or None if all do."""
-        if archive.observed is None or bool(archive.observed.all()):
-            return None
-        if self.score.reduce_dims:
-            raise NotImplementedError(
-                "scores that reduce steps or series do not handle missing targets yet"
-            )
-        return archive.observed
-
     def _thresholds(
         self,
-        pool: ResidualArchive,
-        scores: Tensor,
-        valid: Tensor | None,
+        pool: Pool,
         query: ResidualArchive,
         query_scores: Tensor,
         query_valid: Tensor | None,
     ) -> Tensor:
-        kept = tuple(scores.shape[1:])
-        num_queries = len(query)
+        kept = pool.kept
+        levels = self.score.levels(self.alpha, kept).to(pool.scores.device)
         step_kept = "step" not in self.score.reduce_dims
         # Steps after which each group of kept elements becomes known.
         offsets = query.steps if step_kept else query.steps[-1:]
-        out = torch.empty((num_queries, *kept), dtype=scores.dtype, device=scores.device)
-        uniform = self.weights is None and not self.source.expanding and valid is None
-        chunk = max(1, min(self.chunk_size, _MAX_ELEMENTS // (len(pool) * math.prod(kept))))
-
+        out = torch.empty((len(query), *kept), dtype=pool.scores.dtype, device=pool.scores.device)
+        chunks = self._distributions(pool, query, offsets, step_kept)
         if self.update is None:
-            if uniform:
-                out[:] = self.quantile(scores, None, self.alpha)
-                return out
-            for start in range(0, num_queries, chunk):
-                stop = min(start + chunk, num_queries)
-                weights = self._weights(pool, query, start, stop, valid, offsets, step_kept)
-                out[start:stop] = self.quantile(scores, weights, self.alpha)
+            for start, stop, distribution in chunks:
+                out[start:stop] = distribution.threshold(levels)
             return out
+        engine = OnlineEngine(self.update, levels, step_kept, len(offsets))
+        return replay(engine, query.origins, offsets, chunks, query_scores, query_valid, out)
 
-        self.update.reset(self.alpha, kept, scores.device)
-        selectors = _group_selectors(kept, step_kept, len(offsets), scores.device)
-        origins = query.origins.tolist()
-        offset_list = offsets.tolist()
-        pending = [0] * len(offset_list)  # first origin whose outcome in group g is unreleased
-        for start in range(0, num_queries, chunk):
-            stop = min(start + chunk, num_queries)
-            weights = None
-            if not uniform:
-                weights = self._weights(pool, query, start, stop, valid, offsets, step_kept)
-            for u in range(start, stop):
-                for group, offset in enumerate(offset_list):
-                    while pending[group] < u and origins[pending[group]] + offset <= origins[u]:
-                        t = pending[group]
-                        released = selectors[group]
-                        if query_valid is not None:
-                            released = released & query_valid[t]
-                        self.update.observe(query_scores[t], out[t], released)
-                        pending[group] += 1
-                row = None if weights is None else weights[u - start : u - start + 1]
-                out[u] = self.update.threshold(partial(self._quantile_at, scores, row))
-        return out
-
-    def _quantile_at(self, scores: Tensor, weights: Tensor | None, alpha: Alpha) -> Tensor:
-        """Quantile model output ``[*kept]`` for one query at level ``alpha``."""
-        if weights is None:
-            return self.quantile(scores, None, alpha)
-        alpha = torch.as_tensor(alpha, dtype=torch.float64, device=scores.device)
-        return self.quantile(scores, weights, alpha.unsqueeze(0))[0]
+    def _distributions(
+        self, pool: Pool, query: ResidualArchive, offsets: Tensor, step_kept: bool
+    ) -> Iterator[tuple[int, int, ScoreDistribution]]:
+        """Yield ``(start, stop, distribution)`` for consecutive chunks of the queries."""
+        uniform = self.weights is None and not self.source.expanding and pool.valid is None
+        chunk = self.chunk_size
+        if not uniform:
+            chunk = max(1, min(chunk, _MAX_ELEMENTS // (len(pool) * math.prod(pool.kept))))
+        for start in range(0, len(query), chunk):
+            stop = min(start + chunk, len(query))
+            rows = query.select(torch.arange(start, stop, device=query.device))
+            weights = None if uniform else self._weights(pool, rows, offsets, step_kept)
+            yield start, stop, self.quantile(pool, weights, rows)
 
     def _weights(
-        self,
-        pool: ResidualArchive,
-        query: ResidualArchive,
-        start: int,
-        stop: int,
-        valid: Tensor | None,
-        offsets: Tensor,
-        step_kept: bool,
+        self, pool: Pool, rows: ResidualArchive, offsets: Tensor, step_kept: bool
     ) -> Tensor:
-        """Weights ``[c, P, ...]`` for queries ``start:stop``, with every mask applied."""
-        kept_ndim = len(self.score.kept_shape(query.horizon, query.num_series))
-        chunk = query.select(torch.arange(start, stop, device=query.device))
-        weights = torch.ones(stop - start, len(pool), dtype=torch.float64, device=pool.device)
+        """Weights ``[c, P, ...]`` for the ``c`` query ``rows``, with every mask applied."""
+        kept_ndim = len(pool.kept)
+        device = pool.scores.device
+        weights = torch.ones(len(rows), len(pool), dtype=torch.float64, device=device)
         if self.weights is not None:
-            weights = self.weights(pool, chunk).to(torch.float64)
+            weights = self.weights(pool.rows, rows).to(torch.float64)
         weights = weights.reshape(*weights.shape, *([1] * (2 + kept_ndim - weights.ndim)))
         if self.source.expanding:
-            mask = availability_mask(pool.origins, chunk.origins, offsets)
+            mask = availability_mask(pool.rows.origins, rows.origins, offsets)
             weights = weights * _group_mask(mask, step_kept, kept_ndim)
-        if valid is not None:
-            weights = weights * valid.unsqueeze(0)
+        if pool.valid is not None:
+            weights = weights * pool.valid.unsqueeze(0)
         return weights
 
 
@@ -242,16 +208,6 @@ def _group_mask(mask: Tensor, step_kept: bool, kept_ndim: int) -> Tensor:
     if step_kept:  # one group per step, and step is the first kept dimension
         return mask.reshape(*mask.shape, *([1] * (kept_ndim - 1)))
     return mask[..., 0].reshape(*mask.shape[:2], *([1] * kept_ndim))
-
-
-def _group_selectors(kept: tuple[int, ...], step_kept: bool, groups: int, device) -> Tensor:
-    """``[G, *kept]`` bool: the kept elements whose outcome arrives with each group."""
-    if not step_kept:
-        return torch.ones((1, *kept), dtype=torch.bool, device=device)
-    selectors = torch.zeros((groups, *kept), dtype=torch.bool, device=device)
-    for group in range(groups):
-        selectors[group, group] = True
-    return selectors
 
 
 def _concat_valid(

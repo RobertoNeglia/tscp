@@ -4,7 +4,8 @@ import pytest
 import torch
 
 import tscp.quantile.weighted as weighted_module
-from tscp.quantile import WeightedQuantile, uniform_quantile, weighted_quantile
+from tscp.data import ResidualArchive
+from tscp.quantile import Pool, WeightedQuantile, uniform_quantile, weighted_quantile
 
 
 def brute_force(scores, weights, alpha, test_weight=1.0):
@@ -94,8 +95,17 @@ def test_query_chunks_do_not_change_the_result(monkeypatch):
 def test_component_dispatch_and_checks():
     model = WeightedQuantile()
     scores = torch.rand(20)
-    assert torch.equal(model(scores, None, 0.1), uniform_quantile(scores, 0.1))
+    rows = ResidualArchive(residuals=torch.zeros(20, 1, 1), origins=torch.arange(20), steps=[1])
+    pool = Pool(scores, rows)
+    shared = model(pool, None, rows)
+    assert shared.batch_shape == () and shared.select(3) is shared
+    assert torch.equal(shared.threshold(0.1), uniform_quantile(scores, 0.1))
+    per_query = model(pool, torch.ones(4, 20), rows.select(torch.arange(4)))
+    assert per_query.batch_shape == (4,)
+    assert torch.equal(per_query.threshold(0.1), uniform_quantile(scores, 0.1).expand(4))
     with pytest.raises(ValueError, match="nonnegative"):
-        model(scores, -torch.ones(1, 20), 0.1)
+        model(pool, -torch.ones(1, 20), rows)
     with pytest.raises(ValueError, match="nonnegative"):
         WeightedQuantile(test_weight=-1.0)
+    with pytest.raises(ValueError, match="one row per score"):
+        Pool(scores[:5], rows)

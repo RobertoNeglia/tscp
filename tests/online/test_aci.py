@@ -6,17 +6,33 @@ from tscp.online import ACIUpdate
 from tscp.sources import ExpandingSource, HoldoutSource
 
 
+class Doubling:
+    """A stand-in distribution whose threshold at level a is 2a."""
+
+    def threshold(self, alpha):
+        return 2 * alpha
+
+
 def test_level_moves_only_where_an_outcome_is_released():
     update = ACIUpdate(gamma=0.1)
-    update.reset(0.1, (3,), torch.device("cpu"))
+    update.reset(torch.full((3,), 0.1, dtype=torch.float64), torch.device("cpu"))
     update.observe(
+        0,
         scores=torch.tensor([1.0, 0.0, 1.0]),
         thresholds=torch.tensor([0.5, 0.5, 0.5]),
         released=torch.tensor([True, True, False]),
     )
     expected = torch.tensor([0.1 + 0.1 * (0.1 - 1), 0.1 + 0.1 * 0.1, 0.1], dtype=torch.float64)
     assert torch.allclose(update.level, expected)
-    assert torch.equal(update.threshold(lambda level: 2 * level), 2 * update.level)
+    assert torch.equal(update.threshold(1, Doubling()), 2 * update.level)
+
+
+def test_each_element_moves_toward_its_own_target():
+    update = ACIUpdate(gamma=0.1)
+    update.reset(torch.tensor([0.05, 0.2], dtype=torch.float64), torch.device("cpu"))
+    covered = torch.tensor([0.0, 0.0])
+    update.observe(0, covered, torch.ones(2), torch.ones(2, dtype=torch.bool))
+    assert torch.allclose(update.level, torch.tensor([0.055, 0.22], dtype=torch.float64))
 
 
 def test_gamma_must_be_positive():

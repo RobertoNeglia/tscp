@@ -24,10 +24,32 @@ online update, a residual source or a region type.
 3. Give it only JSON-friendly constructor arguments (numbers, strings, lists, dicts or
    other components), so its config records and rebuilds.
 4. Register fitted tensors as parameters or buffers. If it has a fit step, override
-   `fit(archive)`: it receives only the `fit` split.
+   `fit(train, validation=None)`: it receives only the `fit` split, and the
+   `validation` split when the plan has one. Both are row subsets whose `timeline` ends
+   where the split ends.
 5. Add tests at the mirrored path, for example `tests/weights/test_sliding_window.py`.
    Test exact properties where the theory gives them.
 6. List it in `CHANGELOG.md` under "Unreleased".
+
+What each axis receives and returns:
+
+- **Score:** `forward(rows)` gets row subsets of the archive: residuals, forecasts,
+  forecaster outputs and context, and the history before the rows through
+  `rows.timeline` and `rows.timeline.known_counts(origins)`. `region(threshold, rows)`
+  may use everything known at the query origins, never the query residuals. A score with
+  `channels` (such as the two sides of an interval) shares the miscoverage among them in
+  `levels(alpha, kept)`.
+- **Weights:** `forward(pool_rows, query_rows)` returns nonnegative, unnormalized weights.
+  The composer applies the availability and observed masks.
+- **Quantile model:** `forward(pool, weights, query)` returns a
+  `tscp.quantile.ScoreDistribution`, which gives thresholds at any number of levels and
+  the conformal p-value of any score.
+- **Online update:** `threshold(t, distribution)` answers query `t`;
+  `observe(t, scores, thresholds, released, levels)` takes its outcomes once they are
+  known, often after later queries were answered.
+- **Region:** stores its regions in tensors with the batch dimensions first and returns
+  them from `tensors()`; indexing and device moves then come from the base class. The
+  checks in `tests/regions/test_contract.py` run on every region type.
 
 ## Adding a method
 
@@ -36,8 +58,8 @@ A method is a preset: one component per axis.
 1. Subclass `tscp.methods.ConformalPredictor` in `src/tscp/methods/<name>.py` and wire the
    components in `__init__`, exposing only the method's own hyperparameters.
 2. Register it in `method_map` in `src/tscp/methods/__init__.py`. The generic tests in
-   `tests/methods/test_presets.py` then run on it: causality, split discipline, config
-   round trip and device.
+   `tests/methods/test_presets.py` then run on it with every score: causality, split
+   discipline, config round trip and device.
 3. Check it against the authors' code or published numbers. The docstring cites the
    paper and lists every deviation under "Deviation".
 
