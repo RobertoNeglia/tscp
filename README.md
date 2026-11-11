@@ -4,20 +4,21 @@
 [![Documentation](https://readthedocs.org/projects/tscp/badge/?version=latest)](https://tscp.readthedocs.io/en/latest/)
 
 Conformal prediction for time series, in PyTorch: the published methods behind one interface,
-from one-step intervals to joint regions over a forecast horizon and across series, with one
-evaluation protocol.
+with composable calibration components and shared coverage and region-size metrics.
 
 **Status:** early development. The data contract, the component interfaces, contract
 checks for new components, a registry with plugins, feature maps, helpers for learned
-components and saved methods are in place, with split CP, NexCP and ACI and the absolute,
-signed, normalized and CQR scores; more methods will follow.
+components and saved methods are in place. Methods include split, windowed and Mondrian
+calibration, NexCP, ACI, DtACI, AgACI, conformal PI/PID, journal EnbPI and SPCI. Scores
+include absolute, signed, normalized and CQR constructions. See the method documentation
+for supported inputs, optional dependencies and deviations from reference implementations.
 
 ## Install
 
-tscp is in early development; its pre-releases install with
+Install the development version from source:
 
 ```bash
-pip install --pre tscp
+pip install "git+https://github.com/RobertoNeglia/tscp.git"
 ```
 
 For development, clone the repository and install it with `pip install -e ".[dev]"`.

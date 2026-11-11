@@ -195,12 +195,22 @@ def _check_method_on(factory, archive: ResidualArchive, devices: list[str], atol
         "config",
         "a method must record its config: subclass ConformalPredictor or Component",
     )
-    region = _run(method, archive)
+    method.fit(archive).calibrate(archive)
+    fitted_state = {name: value.clone() for name, value in method.state_dict().items()}
+    region = method.predict(archive)
+    state = method.state_dict()
+    _check(
+        fitted_state.keys() == state.keys()
+        and all(torch.equal(value, state[name]) for name, value in fitted_state.items()),
+        "fitted state",
+        "prediction changed persistent fitted state",
+    )
     test = archive.split("test")
     report = evaluate(region, test, getattr(method, "alpha", 0.1))
     _check(isinstance(report, Report), "runs", "evaluate() must accept the regions")
 
     _same_regions(_run(factory(), archive), region, "determinism", "fresh instances disagree")
+    _same_regions(method.predict(archive), region, "reset", "repeated prediction disagrees")
 
     for position in sorted({len(test) // 4, (3 * len(test)) // 4}):
         origin = int(test.origins[position])

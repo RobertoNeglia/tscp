@@ -31,6 +31,25 @@ class OnlineUpdate(Component):
         """Start a new pass with target miscoverage ``alpha``, ``[*kept]`` in float64."""
         raise NotImplementedError
 
+    def initialize(
+        self, scores: Tensor, origins: Tensor, target_times: Tensor, valid: Tensor | None
+    ) -> None:
+        """Initialize from calibration scores available before the first query.
+
+        Scores and validity have shape ``[P, *kept]``; target times broadcast to that
+        shape. Invalid entries must not initialize an online learner.
+        """
+
+    def prepare_query(self, t: int, *, origin: Tensor, target_times: Tensor) -> None:
+        """Provide query times after releases and before answering query ``t``."""
+
+    def finish_query(self, t: int) -> None:
+        """Discard query-specific state after every target time of query ``t`` has passed.
+
+        This is called once, including when some or all targets were missing. Missing
+        targets never become observations; completion only releases stored bookkeeping.
+        """
+
     def threshold(self, t: int, distribution: ScoreDistribution) -> Tensor:
         """Return the threshold ``[*kept]`` for query ``t``.
 
@@ -53,13 +72,13 @@ class OnlineUpdate(Component):
 
         Args:
             t: Position of the query the outcome belongs to.
-            scores: ``[*kept]`` scores of its residuals.
+            scores: ``[*kept]`` scores of its residuals, zero outside ``released``.
             thresholds: ``[*kept]`` thresholds it was answered with.
             released: ``[*kept]`` bool, True for the elements whose outcome is known now.
                 Per-step outcomes arrive one step at a time; missing targets never arrive.
             levels: ``[*kept]`` realized levels, ``distribution.level(scores)`` under the
                 distribution query ``t`` was answered with, if :attr:`needs_levels`;
-                otherwise None.
+                otherwise None. Entries outside ``released`` are zero.
         """
         raise NotImplementedError
 

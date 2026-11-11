@@ -23,6 +23,13 @@ class Component(ConfigMixin, torch.nn.Module):
     #: say) and is not in ``state_dict()``.
     refit_on_load: bool = False
 
+    #: Whether prediction must construct this component's inputs after each release.
+    #: Online state is prediction-scoped and must stay out of persistent buffers.
+    adapts_online: bool = False
+
+    def reset_online(self) -> None:
+        """Clear prediction-scoped state before replaying an archive."""
+
     def fit(self, train: "ResidualArchive", validation: "ResidualArchive | None" = None) -> Self:
         """Fit trainable state.
 

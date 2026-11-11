@@ -1,0 +1,10 @@
+dataset: variance_shift
+horizon: 1
+num_origins: 500
+seed: 7
+alpha: 0.1
+sizes: {fit: 0.2, calibration: 0.3, test: null}
+window: 50
+methods:
+  dtaci: {}
+  pi: {lr: 0.1, proportional_lr: false}

@@ -8,13 +8,32 @@ itself does not depend on archives: code that answers live queries can drive it 
 outcomes as they arrive.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
 
 import torch
 from torch import Tensor
 
 from tscp.online import OnlineUpdate
 from tscp.quantile import ScoreDistribution
+
+
+def release_schedule(
+    origins: Tensor, offsets: Tensor
+) -> Iterator[tuple[int, list[tuple[int, int]]]]:
+    """Yield each query and the earlier outcomes available before it is answered.
+
+    Each released pair is ``(query_position, release_group)``. Outcomes at the same
+    time as a query are released first; every outcome is released at most once.
+    """
+    times, delays = origins.tolist(), offsets.tolist()
+    pending = [0] * len(delays)
+    for u, origin in enumerate(times):
+        released = []
+        for group, delay in enumerate(delays):
+            while pending[group] < u and times[pending[group]] + delay <= origin:
+                released.append((pending[group], group))
+                pending[group] += 1
+        yield u, released
 
 
 def group_selectors(
@@ -47,11 +66,14 @@ class OnlineEngine:
     def __init__(self, update: OnlineUpdate, levels: Tensor, step_kept: bool, num_groups: int):
         self.update = update
         self.selectors = group_selectors(tuple(levels.shape), step_kept, num_groups, levels.device)
+        self._remaining: dict[int, set[int]] = {}
         update.reset(levels, levels.device)
 
     def threshold(self, t: int, distribution: ScoreDistribution) -> Tensor:
         """The threshold of query ``t``."""
-        return self.update.threshold(t, distribution)
+        threshold = self.update.threshold(t, distribution)
+        self._remaining[t] = set(range(len(self.selectors)))
+        return threshold
 
     def release(
         self,
@@ -62,18 +84,27 @@ class OnlineEngine:
         valid: Tensor | None,
         levels: Tensor | None,
     ) -> None:
-        """Pass the outcome of release group ``group`` of query ``t`` to the update."""
+        """Pass only this group's observed outcomes, then finish completed queries."""
+        remaining = self._remaining.get(t)
+        if remaining is None or group not in remaining:
+            raise ValueError("the release must belong to an issued, unreleased query group")
         released = self.selectors[group]
         if valid is not None:
             released = released & valid
-        self.update.observe(t, scores, thresholds, released, levels)
+        known_scores = torch.where(released, scores, 0)
+        known_levels = None if levels is None else torch.where(released, levels, 0)
+        self.update.observe(t, known_scores, thresholds, released, known_levels)
+        remaining.remove(group)
+        if not remaining:
+            del self._remaining[t]
+            self.update.finish_query(t)
 
 
 def replay(
     engine: OnlineEngine,
     origins: Tensor,
     offsets: Tensor,
-    chunks: Iterable[tuple[int, int, ScoreDistribution]],
+    chunks: Iterable[tuple[int, int, ScoreDistribution]] | Callable[[int], ScoreDistribution],
     scores: Tensor,
     valid: Tensor | None,
     out: Tensor,
@@ -88,8 +119,8 @@ def replay(
         engine: The engine to drive.
         origins: ``[Q]`` query origins.
         offsets: ``[G]`` steps after which each release group becomes known.
-        chunks: ``(start, stop, distribution)`` for consecutive chunks of queries, in order;
-            ``distribution`` covers queries ``start .. stop - 1``.
+        chunks: Consecutive ``(start, stop, distribution)`` chunks, or a callable that
+            constructs query ``t``'s distribution after its outcome releases.
         scores: ``[Q, *kept]`` scores of the queries' residuals, released once known.
         valid: ``[Q, *kept]`` bool, or None if every score is defined.
         out: ``[Q, *kept]`` tensor that receives the thresholds.
@@ -97,32 +128,37 @@ def replay(
     Returns:
         ``out``.
     """
-    origin_list, offset_list = origins.tolist(), offsets.tolist()
     levels = None
     if engine.update.needs_levels:
         levels = torch.empty(out.shape, dtype=torch.float64, device=out.device)
-    pending = [0] * len(offset_list)  # first query whose outcome in group g is unreleased
-    for start, stop, distribution in chunks:
-        for u in range(start, stop):
-            for group, offset in enumerate(offset_list):
-                while pending[group] < u and origin_list[pending[group]] + offset <= origin_list[u]:
-                    t = pending[group]
-                    engine.release(
-                        t,
-                        group,
-                        scores[t],
-                        out[t],
-                        None if valid is None else valid[t],
-                        None if levels is None else levels[t],
-                    )
-                    pending[group] += 1
+    iterator = None if callable(chunks) else iter(chunks)
+    start, stop, distribution = 0, 0, None
+    for u, released in release_schedule(origins, offsets):
+        for t, group in released:
+            engine.release(
+                t,
+                group,
+                scores[t],
+                out[t],
+                None if valid is None else valid[t],
+                None if levels is None else levels[t],
+            )
+        if callable(chunks):
+            current = chunks(u)
+        else:
+            if u >= stop:
+                start, stop, distribution = next(iterator)
+                if start != u or stop <= start:
+                    raise ValueError("distribution chunks must cover consecutive queries")
             current = distribution.select(u - start)
-            out[u] = engine.threshold(u, current)
-            if levels is not None:
-                # Stored now, while the distribution is at hand; the update sees it only
-                # when the outcome is released.
-                levels[u] = current.level(scores[u])
+        target_times = (
+            (origins[u] + offsets).reshape(-1, *([1] * (out.ndim - 1))) * engine.selectors
+        ).sum(dim=0)
+        engine.update.prepare_query(u, origin=origins[u], target_times=target_times)
+        out[u] = engine.threshold(u, current)
+        if levels is not None:
+            levels[u] = current.level(scores[u])
     return out
 
 
-__all__ = ["OnlineEngine", "group_selectors", "replay"]
+__all__ = ["OnlineEngine", "group_selectors", "release_schedule", "replay"]

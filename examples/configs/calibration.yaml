@@ -1,0 +1,16 @@
+horizon: 1
+num_origins: 180
+seed: 3
+alpha: 0.1
+methods:
+  pooled: {method: split}
+  rolling: {method: windowed, window_size: 30}
+  phase:
+    method: mondrian
+    groups: {kind: features, name: phase, period: 3}
+  rolling_phase:
+    score: absolute
+    source: {name: expanding, window_size: 40}
+    weights:
+      name: mondrian
+      groups: {kind: features, name: phase, period: 3}

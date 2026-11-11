@@ -1,0 +1,9 @@
+dataset: variance_shift
+horizon: 1
+num_origins: 160
+seed: 7
+alpha: 0.1
+sizes: {fit: 0.2, calibration: 0.3, test: null}
+window: 20
+methods:
+  pid: {lr: 0.1, proportional_lr: false}

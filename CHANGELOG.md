@@ -8,6 +8,25 @@ All notable changes to tscp are listed here. The format follows
 
 ### Added
 
+- Rolling calibration with `ExpandingSource(window_size=...)` and `WindowedCP`;
+  missing rows consume window slots before score-validity masking.
+- `MondrianWeights` and `MondrianCP` for discrete origin-level categories.
+- Deterministic DtACI, conformal PI/PID with a nested causal scorecaster, and optional
+  online Theta scorecasting through the `pid` extra.
+- One-step univariate AgACI with separate endpoint Bernstein aggregators and explicit
+  target-coordinate replacements for unbounded expert endpoints.
+- Journal EnbPI and `from_bootstrap_predictions` for cached bootstrap forecasts and
+  membership arrays, with OOB calibration and test-forecast aggregation.
+- One-step univariate SPCI with rolling exact quantile forests through the `forest`
+  extra, plus reusable `WidthOptimal` and `QuantileForest` helpers.
+- Prediction-scoped causal adaptation for weights and quantile models, lazy distributions
+  after outcome releases, and shared release scheduling. Contract checks verify replay
+  reset and preservation of persistent fitted state.
+- Independent equation and pinned author-reference fixtures for calibration and online
+  methods, distinct from the existing regression fixture; config-driven examples and
+  method documentation describing numerical conventions and deviations.
+
+
 - Package layout under `src/tscp/`: one subpackage per design axis (`sources`, `scores`,
   `weights`, `quantile`, `online`, `regions`), plus `data`, `methods`, `metrics`,
   `features`, `datasets` and `utils`.
@@ -70,3 +89,8 @@ All notable changes to tscp are listed here. The format follows
 - Sphinx docs with a concepts page and tutorials (composing a method, writing a component,
   a learned component and a plugin, batch production) whose code lives in `examples/`
   and runs in the tests; CI that builds them with warnings as errors; pre-commit.
+
+### Fixed
+
+- Source installation guidance for development versions.
+- Registry construction from constructor configs with nested component configurations.

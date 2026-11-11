@@ -8,11 +8,18 @@ poolers are built in tgp. :func:`compose` builds a method from a spec of short n
 from tscp import registry
 
 from .aci import ACI
+from .agaci import AgACI
 from .base import AXES, ConformalPredictor
 from .compose import compose
+from .dtaci import DtACI
+from .enbpi import EnbPI
 from .io import load_method, save_method
+from .mondrian import MondrianCP
 from .nexcp import NexCP
+from .pid import ConformalPI, ConformalPID
+from .spci import SPCI
 from .split import SplitCP
+from .windowed import WindowedCP
 
 method_map: dict[str, type[ConformalPredictor]] = registry.entries("method")
 """Registered presets by short name: the live table of :mod:`tscp.registry`."""
@@ -36,10 +43,18 @@ def get_method(name: str, *, ignore_unknown: bool = False, **kwargs) -> Conforma
 
 __all__ = [
     "ACI",
+    "AgACI",
     "AXES",
     "ConformalPredictor",
+    "ConformalPI",
+    "ConformalPID",
+    "DtACI",
+    "EnbPI",
+    "MondrianCP",
     "NexCP",
     "SplitCP",
+    "SPCI",
+    "WindowedCP",
     "compose",
     "get_method",
     "load_method",

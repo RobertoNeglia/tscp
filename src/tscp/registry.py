@@ -19,7 +19,7 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
-from tscp.utils.config import qualified_name
+from tscp.utils.config import _decode, qualified_name
 
 KINDS = ("score", "source", "weights", "quantile", "update", "features", "method")
 """Kinds of registered classes: the component axes, feature maps, and methods."""
@@ -156,7 +156,7 @@ def build(kind: str, name: str, *, ignore_unknown: bool = False, **kwargs: Any) 
         if not ignore_unknown:
             raise TypeError(f"{cls.__name__} does not take {unknown}; it takes {accepted}")
         kwargs = {key: value for key, value in kwargs.items() if key in accepted}
-    return cls(**kwargs)
+    return cls(**{key: _decode(value) for key, value in kwargs.items()})
 
 
 def names(kind: str) -> list[str]:

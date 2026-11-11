@@ -1,0 +1,41 @@
+{
+  "reference": "https://github.com/hamrel-cxu/SPCI-code/tree/d598dd32099402bc1b6d636f471a155001c0e54e",
+  "revision": "d598dd32099402bc1b6d636f471a155001c0e54e",
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/hamrel-cxu/SPCI-code/d598dd32099402bc1b6d636f471a155001c0e54e/utils_SPCI.py",
+      "sha256": "8d89aeca82d6373125cdd7b721d0d165ffcf48221d7463fa75b25cc966cb505e"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/hamrel-cxu/SPCI-code/d598dd32099402bc1b6d636f471a155001c0e54e/SPCI_class.py",
+      "sha256": "95472afad19571af87135c6fd9c3f45b638b16a3615955de28c72120af28bf6f"
+    }
+  ],
+  "generated_by": "pinned author routines with cached inputs",
+  "versions": {
+    "numpy": "2.5.1",
+    "sklearn-quantile": "0.1.1",
+    "scikit-learn": "1.8.0",
+    "scipy": "1.18.0"
+  },
+  "parameters": {
+    "alpha": 0.13,
+    "lags": 4,
+    "window_size": 24,
+    "n_estimators": 10,
+    "max_depth": 2,
+    "seed": 7,
+    "n_jobs": 1
+  },
+  "conventions": "rolling one-step QRF refit, five unrounded beta candidates, first tie",
+  "tolerance": {
+    "rtol": 1e-06,
+    "atol": 1e-07
+  },
+  "deviations": [
+    "forecasts are fixed at zero to isolate the interval algorithm",
+    "fixed random_state and n_jobs are injected into the reference forest constructor",
+    "criterion squared_error is the current spelling of the reference mse alias",
+    "single-query forest output is squeezed for NumPy scalar-assignment compatibility"
+  ]
+}

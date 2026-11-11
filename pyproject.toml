@@ -41,6 +41,13 @@ Issues = "https://github.com/RobertoNeglia/tscp/issues"
 Changelog = "https://github.com/RobertoNeglia/tscp/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+forest = [
+    "sklearn-quantile==0.1.1",
+    "scikit-learn>=1.5,<1.9",
+]
+pid = [
+    "statsmodels>=0.14,<0.15",
+]
 examples = [
     "pyyaml>=6",
 ]

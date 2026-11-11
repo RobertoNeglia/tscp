@@ -2,6 +2,7 @@
 
 from .base import Weights
 from .exponential import ExponentialWeights
+from .mondrian import MondrianWeights
 from .uniform import UniformWeights
 
-__all__ = ["ExponentialWeights", "UniformWeights", "Weights"]
+__all__ = ["ExponentialWeights", "MondrianWeights", "UniformWeights", "Weights"]

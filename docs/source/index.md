@@ -1,8 +1,7 @@
 # tscp
 
 Conformal prediction for time series, in PyTorch: the published methods behind one
-interface, from one-step intervals to joint regions over a forecast horizon and across
-series, with one evaluation protocol.
+interface, composable calibration components, and shared coverage and region-size metrics.
 
 ```python
 from tscp.datasets import variance_shift
@@ -19,6 +18,7 @@ print(evaluate(region, archive.split("test"), alpha=0.1, window=200))
 :maxdepth: 2
 
 concepts
+methods
 tutorials/compose
 tutorials/component
 tutorials/learned

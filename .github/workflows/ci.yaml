@@ -50,3 +50,41 @@ jobs:
         run: pip install -e ".[doc]"
       - name: Build the docs, warnings as errors
         run: python -m sphinx -W --keep-going -b html docs/source docs/build/html
+
+  optional:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install CPU torch
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install optional estimator backends
+        run: pip install -e ".[test,forest,pid]"
+      - name: Check optional estimators and supported preset contracts
+        run: pytest tests/online tests/quantile tests/methods tests/test_examples.py
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build wheel and source distribution
+        run: pip install build && python -m build
+      - name: Install built wheel
+        run: pip install dist/*.whl
+      - name: Check installed package outside the source path
+        run: |
+          python -I -c 'from tscp.datasets import variance_shift; from tscp.methods import WindowedCP; a = variance_shift(horizon=1, num_origins=100); print(WindowedCP(20).calibrate(a).predict(a).dimension)'
+      - name: Build a wheel from the source distribution
+        run: pip wheel --no-deps dist/*.tar.gz --wheel-dir build/sdist

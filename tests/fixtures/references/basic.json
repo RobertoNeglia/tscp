@@ -1,0 +1,289 @@
+{
+  "provenance": {
+    "kind": "independent scalar evaluation of published equations",
+    "generator": "tests/reference/generate_basic.py",
+    "dependencies": "Python standard library only; no random draws",
+    "versions": {
+      "python": "3.13.13"
+    },
+    "sources": {
+      "split_signed_normalized": "https://arxiv.org/abs/1604.04173",
+      "nexcp": "https://arxiv.org/abs/2202.13415v5",
+      "aci": "https://arxiv.org/abs/2106.00170v3",
+      "cqr": "https://arxiv.org/abs/1905.03222v1"
+    },
+    "conventions": "test-point mass 1 at infinity; left inverse weighted CDF; truth minus forecast; outcomes released before the next origin; alpha<=0 unbounded and alpha>=1 empty",
+    "deviations": "fixed external forecasts; expanding calibration for ACI/NexCP; two-sided CQR is a union-bound extension",
+    "tolerance": {
+      "atol": 1e-12,
+      "rtol": 1e-12
+    }
+  },
+  "inputs": {
+    "calibration": [
+      -6.0,
+      -3.0,
+      -2.0,
+      -1.0,
+      0.0,
+      1.0,
+      2.0,
+      4.0,
+      8.0
+    ],
+    "test": [
+      1.0,
+      -9.0,
+      0.0,
+      10.0,
+      -1.0
+    ],
+    "origins": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "scales": [
+      1.0,
+      0.5,
+      2.0,
+      1.0,
+      0.5,
+      1.5,
+      2.0,
+      1.0,
+      4.0,
+      0.5,
+      1.0,
+      2.0,
+      1.5,
+      3.0
+    ],
+    "lower": [
+      -2.0,
+      -3.0,
+      -4.0,
+      -2.0,
+      -3.0,
+      -4.0,
+      -2.0,
+      -3.0,
+      -4.0,
+      -2.0,
+      -3.0,
+      -4.0,
+      -2.0,
+      -3.0
+    ],
+    "upper": [
+      2.0,
+      3.0,
+      4.0,
+      5.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0,
+      2.0,
+      3.0
+    ]
+  },
+  "parameters": {
+    "alpha": 0.25,
+    "decay": 0.93,
+    "gamma": 0.2
+  },
+  "expected": {
+    "split": [
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -6.0,
+        6.0
+      ]
+    ],
+    "signed": [
+      [
+        -6.0,
+        8.0
+      ],
+      [
+        -6.0,
+        8.0
+      ],
+      [
+        -6.0,
+        8.0
+      ],
+      [
+        -6.0,
+        8.0
+      ],
+      [
+        -6.0,
+        8.0
+      ]
+    ],
+    "normalized": [
+      [
+        -3.0,
+        3.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -12.0,
+        12.0
+      ],
+      [
+        -9.0,
+        9.0
+      ],
+      [
+        -18.0,
+        18.0
+      ]
+    ],
+    "normalized_fitted": [
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -6.0,
+        6.0
+      ]
+    ],
+    "cqr": [
+      [
+        -6.0,
+        7.0
+      ],
+      [
+        -7.0,
+        8.0
+      ],
+      [
+        -8.0,
+        9.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -7.0,
+        7.0
+      ]
+    ],
+    "cqr_asymmetric": [
+      [
+        -6.0,
+        9.0
+      ],
+      [
+        -7.0,
+        10.0
+      ],
+      [
+        -8.0,
+        11.0
+      ],
+      [
+        -6.0,
+        8.0
+      ],
+      [
+        -7.0,
+        9.0
+      ]
+    ],
+    "nexcp": [
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -9.0,
+        9.0
+      ]
+    ],
+    "aci": [
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -4.0,
+        4.0
+      ],
+      [
+        -9.0,
+        9.0
+      ],
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        "-inf",
+        "inf"
+      ]
+    ]
+  }
+}

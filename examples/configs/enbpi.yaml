@@ -1,0 +1,11 @@
+# Settings for examples/bootstrap_intervals.py.
+horizon: 1
+num_origins: 180
+seed: 0
+alpha: 0.1
+members: 12
+in_bag_fraction: 0.6
+member_spread: 0.2
+methods:
+  signed_split: {method: split, score: signed}
+  enbpi: {method: enbpi, window_size: 50}

@@ -1,0 +1,31 @@
+{
+  "reference": "https://github.com/hamrel-cxu/EnbPI/tree/5df45367b0b13c841c44f173e5a791e070e0c511",
+  "revision": "5df45367b0b13c841c44f173e5a791e070e0c511",
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/hamrel-cxu/EnbPI/5df45367b0b13c841c44f173e5a791e070e0c511/utils_EnbPI.py",
+      "sha256": "6299c1cb61f62bcfebb13171a504cfe31a8d507e3c3d01f70430d4ed9a7c832d"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/hamrel-cxu/EnbPI/5df45367b0b13c841c44f173e5a791e070e0c511/PI_class_EnbPI.py",
+      "sha256": "2d2143d2397fe2431e4bf5d4b229e648f95891a5e3e1b2d3a04b2888e471082c"
+    }
+  ],
+  "generated_by": "pinned author routines with cached inputs",
+  "versions": {
+    "numpy": "2.5.1"
+  },
+  "parameters": {
+    "alpha": 0.13,
+    "calibration_size": 20,
+    "bins": 5
+  },
+  "conventions": "journal OOB mean, signed residuals, ceil-percent linear quantiles, first tie",
+  "tolerance": {
+    "rtol": 1e-12,
+    "atol": 1e-12
+  },
+  "deviations": [
+    "cached member predictions replace fitting the forecasters"
+  ]
+}

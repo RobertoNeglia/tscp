@@ -2,6 +2,7 @@
 
 import math
 from collections.abc import Iterator
+from dataclasses import replace
 from typing import Self
 
 import torch
@@ -136,6 +137,9 @@ class ConformalPredictor(Component):
             raise ValueError("predict() needs an archive with a 'test' split")
         test_rows = archive.splits["test"]
         query = archive.select(test_rows)
+        for component in self.modules():
+            if isinstance(component, Component) and component is not self:
+                component.reset_online()
         query_scores = self.score(query)
         query_valid = self.score.valid(query)
         if self.source.expanding:
@@ -166,13 +170,57 @@ class ConformalPredictor(Component):
         # Steps after which each group of kept elements becomes known.
         offsets = query.steps if step_kept else query.steps[-1:]
         out = torch.empty((len(query), *kept), dtype=pool.scores.dtype, device=pool.scores.device)
-        chunks = self._distributions(pool, query, offsets, step_kept)
+        adaptive = any(
+            getattr(c, "adapts_online", False)
+            for axis in (self.weights, self.quantile)
+            if axis is not None
+            for c in axis.modules()
+        )
+        if self.score.adapts_online:
+            raise ValueError("online score refitting requires a specialized predictor")
+        chunks = (
+            (lambda t: self._adaptive_distribution(pool, query, t, offsets, step_kept))
+            if adaptive
+            else self._distributions(pool, query, offsets, step_kept)
+        )
         if self.update is None:
-            for start, stop, distribution in chunks:
-                out[start:stop] = distribution.threshold(levels)
+            if adaptive:
+                for t in range(len(query)):
+                    out[t] = chunks(t).threshold(levels)
+            else:
+                for start, stop, distribution in chunks:
+                    out[start:stop] = distribution.threshold(levels)
             return out
         engine = OnlineEngine(self.update, levels, step_kept, len(offsets))
+        initial = ~torch.isin(pool.rows.origins, query.origins)
+        if bool(initial.any()):
+            times = pool.rows.origins[initial, None] + offsets[None, :]
+            times = times.reshape(
+                int(initial.sum()),
+                *([len(offsets)] if step_kept else []),
+                *([1] * (len(kept) - int(step_kept))),
+            ).expand(-1, *kept)
+            valid = times <= query.origins[0]
+            if pool.valid is not None:
+                valid = valid & pool.valid[initial]
+            self.update.initialize(pool.scores[initial], pool.rows.origins[initial], times, valid)
         return replay(engine, query.origins, offsets, chunks, query_scores, query_valid, out)
+
+    def _adaptive_distribution(self, pool, query, t, offsets, step_kept):
+        """Build one distribution from physically masked, causal archive views."""
+        origin = query.origins[t]
+        indices = torch.nonzero(pool.rows.origins <= origin).flatten()
+        rows = _causal_rows(pool.rows.select(indices), origin)
+        query_rows = _causal_rows(query.select(torch.tensor([t], device=query.device)), origin)
+        available = availability_mask(rows.origins, query_rows.origins, offsets)
+        available = _group_mask(available, step_kept, len(pool.kept))[0].expand(
+            len(indices), *pool.kept
+        )
+        valid = available if pool.valid is None else available & pool.valid[indices]
+        scores = torch.where(valid, pool.scores[indices], 0)
+        causal_pool = Pool(scores, rows, valid)
+        weights = self._weights(causal_pool, query_rows, offsets, step_kept)
+        return self.quantile(causal_pool, weights, query_rows).select(0)
 
     def _distributions(
         self, pool: Pool, query: ResidualArchive, offsets: Tensor, step_kept: bool
@@ -200,10 +248,29 @@ class ConformalPredictor(Component):
         weights = weights.reshape(*weights.shape, *([1] * (2 + kept_ndim - weights.ndim)))
         if self.source.expanding:
             mask = availability_mask(pool.rows.origins, rows.origins, offsets)
+            window_size = getattr(self.source, "window_size", None)
+            if window_size is not None:
+                # Count rows before applying score validity: missing scores consume a slot.
+                rank_from_end = mask.flip(1).to(torch.int64).cumsum(dim=1).flip(1)
+                mask = mask & (rank_from_end <= window_size)
             weights = weights * _group_mask(mask, step_kept, kept_ndim)
         if pool.valid is not None:
             weights = weights * pool.valid.unsqueeze(0)
         return weights
+
+
+def _causal_rows(rows: ResidualArchive, origin: Tensor) -> ResidualArchive:
+    """Keep known covariates and replace every unreleased target with missing data."""
+    timeline = rows.timeline if rows.timeline is not None else rows
+    end = int(torch.searchsorted(timeline.origins, origin, right=True))
+    safe = timeline.head(end)
+    observed = safe.target_times[..., None] <= origin
+    observed = observed.expand_as(safe.residuals)
+    if safe.observed is not None:
+        observed = observed & safe.observed
+    safe = replace(safe, residuals=torch.where(observed, safe.residuals, 0), observed=observed)
+    positions = rows.rows if rows.rows is not None else torch.arange(len(rows), device=rows.device)
+    return safe.select(positions)
 
 
 def _group_mask(mask: Tensor, step_kept: bool, kept_ndim: int) -> Tensor:

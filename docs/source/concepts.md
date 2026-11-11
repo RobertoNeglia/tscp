@@ -29,6 +29,9 @@ checked against a fingerprint when it is read back.
 The residual of origin `s` at step `h` is known once its target time has passed: at origin
 `t` it is usable only if `s + h <= t`. Everything that grows or adapts during the test
 period follows this rule: expanding calibration pools, online updates and features.
+Explicitly online conformal learners may refit from released outcomes as well. Initial
+fitting and hyperparameter selection still use the fitting/validation splits. Every
+prediction replay resets online state; fitted persistent state is preserved.
 
 A row subset, made by `select` or `split`, keeps the archive it came from as its
 `timeline`. Components read the history before a row from there, through
