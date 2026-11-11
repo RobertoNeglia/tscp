@@ -34,6 +34,12 @@ dependencies = [
     "torch>=2.2",
 ]
 
+[project.urls]
+Documentation = "https://tscp.readthedocs.io"
+Source = "https://github.com/RobertoNeglia/tscp"
+Issues = "https://github.com/RobertoNeglia/tscp/issues"
+Changelog = "https://github.com/RobertoNeglia/tscp/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 examples = [
     "pyyaml>=6",

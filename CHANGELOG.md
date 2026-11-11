@@ -55,6 +55,8 @@ All notable changes to tscp are listed here. The format follows
   torch set `refit_on_load`. Fresh components load fitted state whose shape depends on
   the data. `examples/production.py` runs the whole workflow.
 - A `py.typed` marker, for type checkers.
+- A release workflow that publishes to PyPI through trusted publishing when a version
+  tag is pushed.
 - `tscp.testing`: checks that a method or component keeps tscp's contracts
   (`check_method`, `check_score`, `check_weights`, `check_quantile_model`,
   `check_online_update`, `check_region`), with `synthetic_archive` and `MaxAbsScore`.

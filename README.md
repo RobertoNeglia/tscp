@@ -1,5 +1,8 @@
 # tscp
 
+[![CI](https://github.com/RobertoNeglia/tscp/actions/workflows/ci.yaml/badge.svg)](https://github.com/RobertoNeglia/tscp/actions/workflows/ci.yaml)
+[![Documentation](https://readthedocs.org/projects/tscp/badge/?version=latest)](https://tscp.readthedocs.io/en/latest/)
+
 Conformal prediction for time series, in PyTorch: the published methods behind one interface,
 from one-step intervals to joint regions over a forecast horizon and across series, with one
 evaluation protocol.
@@ -11,9 +14,14 @@ signed, normalized and CQR scores; more methods will follow.
 
 ## Install
 
+tscp is in early development; its pre-releases install with
+
 ```bash
-pip install -e ".[dev]"
+pip install --pre tscp
 ```
+
+For development, clone the repository and install it with `pip install -e ".[dev]"`.
+Documentation: https://tscp.readthedocs.io
 
 ## Quickstart
 
