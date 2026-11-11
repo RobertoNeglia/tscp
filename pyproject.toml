@@ -1,0 +1,123 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tscp"
+dynamic = ["version"]
+description = "Conformal prediction for time series, in PyTorch"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Roberto Neglia" }]
+keywords = [
+    "conformal-prediction",
+    "time-series",
+    "forecasting",
+    "uncertainty-quantification",
+    "prediction-intervals",
+    "pytorch",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.2",
+]
+
+[project.optional-dependencies]
+examples = [
+    "pyyaml>=6",
+]
+test = [
+    "pytest>=8",
+    "pytest-cov>=5",
+]
+doc = [
+    "sphinx>=7,<9",
+    "furo",
+    "myst-parser>=3",
+    "sphinx-copybutton",
+]
+dev = [
+    "tscp[examples,test,doc]",
+    "pre-commit",
+    "ruff==0.17.4", # keep in sync with .pre-commit-config.yaml
+]
+
+[tool.hatch.version]
+path = "src/tscp/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tscp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/tscp",
+    "tests",
+    "docs",
+    "examples",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+]
+exclude = ["docs/build", "docs/source/generated"]
+
+# -----------------------------------------------------------------------------
+# Lint and format (ruff only)
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "SIM", # simplify
+    "D",   # docstrings (Google convention)
+]
+ignore = [
+    "D100", # missing docstring in public module
+    "D101", # missing docstring in public class
+    "D102", # missing docstring in public method
+    "D103", # missing docstring in public function
+    "D104", # missing docstring in public package
+    "D105", # missing docstring in magic method
+    "D107", # missing docstring in __init__
+    "D417", # every argument documented
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+"examples/**" = ["D"]
+"docs/**" = ["D"]
+
+# -----------------------------------------------------------------------------
+# Tests
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["--import-mode=importlib", "--strict-markers"]
+markers = ["slow: longer running tests"]
+
+[tool.coverage.run]
+source = ["tscp"]
+branch = true

@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use tscp, please cite it as below."
+title: "tscp: conformal prediction for time series"
+type: software
+authors:
+  - family-names: Neglia
+    given-names: Roberto
+license: MIT
+version: 0.1.0.dev0
+keywords:
+  - conformal prediction
+  - time series
+  - forecasting
+  - uncertainty quantification

@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Extra packages installed with pip --target on remote hosts
+.pydeps/
+
+# Private, local-only files: notes, AI-assistant instructions and settings, editor settings
+/ignore/
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
+GEMINI.md
+.claude/
+.cursor/
+.cursorrules
+.windsurfrules
+.aider*
+.continue/
+.codex/
+.mcp.json
+.github/copilot-instructions.md
+.vscode/
+.idea/
+*.code-workspace
+
+# Sphinx build output and autosummary pages
+docs/build/
+docs/source/generated/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Data and run outputs stay out of git. Anchored to the repo root: the package has its own
+# data/ subpackage (src/tscp/data, tests/data), which must stay tracked.
+/data/
+/artifacts/
+/logs/
+
+# macOS
+.DS_Store

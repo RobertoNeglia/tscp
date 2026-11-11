@@ -1,0 +1,12 @@
+# Settings for examples/quickstart.py. The horizon lives here, not in the script.
+horizon: 1
+alpha: 0.1
+num_origins: 3000
+seed: 0
+sizes: {fit: 0.2, calibration: 0.3, test: null}
+window: 200  # origins per window for the worst-window coverage
+datasets: [gaussian_control, variance_shift]
+methods:
+  split: {}
+  nexcp: {decay: 0.99}
+  aci: {gamma: 0.005}
