@@ -6,8 +6,11 @@ build:
     python: "3.12"
   jobs:
     pre_install:
+      # The build's own pip is too old for the PyTorch index: it rejects the index's
+      # typing-extensions wheel over the spelling of its name.
+      - python -m pip install --upgrade pip
       # CPU wheels keep the docs build small; the default PyPI wheel bundles CUDA.
-      - pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 sphinx:
   configuration: docs/source/conf.py
