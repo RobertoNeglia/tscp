@@ -5,9 +5,11 @@ from torch import Tensor
 
 from tscp.data import ResidualArchive
 from tscp.regions import Interval
+from tscp.registry import register
 from tscp.scores.base import Score
 
 
+@register("score", "signed")
 class SignedScore(Score):
     """Two one-sided scores per element, for intervals that need not be symmetric.
 

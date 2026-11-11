@@ -160,3 +160,17 @@ def test_known_counts_are_prefixes_of_the_availability_mask():
     assert torch.equal(counts, mask.sum(dim=1))
     prefix = torch.arange(6)[None, :, None] < counts[:, None, :]
     assert torch.equal(mask, prefix)
+
+
+def test_timestamps_are_checked_hashed_and_kept_with_their_rows():
+    hour = 3_600_000_000_000
+    stamped = archive(timestamps=torch.arange(10) * hour)
+    assert stamped.fingerprint() != archive(residuals=stamped.residuals).fingerprint()
+    subset = stamped.select(torch.tensor([2, 5]))
+    assert subset.timestamps.tolist() == [2 * hour, 5 * hour]
+    assert torch.equal(stamped.head(3).timestamps, stamped.timestamps[:3])
+    assert "timestamps" in repr(stamped)
+    with pytest.raises(ValueError, match="strictly increase"):
+        archive(timestamps=torch.zeros(10, dtype=torch.int64))
+    with pytest.raises(ValueError, match="integers"):
+        archive(timestamps=torch.arange(10.0))

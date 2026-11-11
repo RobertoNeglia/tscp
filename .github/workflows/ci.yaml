@@ -36,3 +36,17 @@ jobs:
         run: pip install -e ".[test]"
       - name: Run tests
         run: pytest --cov --cov-report=term-missing
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install CPU torch
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install tscp with the docs extra
+        run: pip install -e ".[doc]"
+      - name: Build the docs, warnings as errors
+        run: python -m sphinx -W --keep-going -b html docs/source docs/build/html

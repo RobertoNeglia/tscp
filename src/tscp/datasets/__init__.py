@@ -1,6 +1,6 @@
 """Datasets as residual archives."""
 
 from . import synthetic
-from .synthetic import gaussian_control, variance_shift
+from .synthetic import context_scale, gaussian_control, variance_shift
 
-__all__ = ["gaussian_control", "synthetic", "variance_shift"]
+__all__ = ["context_scale", "gaussian_control", "synthetic", "variance_shift"]

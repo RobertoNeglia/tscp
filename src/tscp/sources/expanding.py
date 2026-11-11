@@ -3,9 +3,11 @@
 from torch import Tensor
 
 from tscp.data import ResidualArchive
+from tscp.registry import register
 from tscp.sources.base import Source, calibration_rows
 
 
+@register("source", "expanding")
 class ExpandingSource(Source):
     """The calibration split, plus each test residual once its target time has passed.
 

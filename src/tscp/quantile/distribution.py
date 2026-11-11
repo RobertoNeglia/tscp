@@ -124,8 +124,7 @@ class EmpiricalDistribution(ScoreDistribution):
         index = first.clamp(max=num_scores - 1).unsqueeze(pool_dim)
         values = torch.gather(self.ordered.expand(unreached.shape), pool_dim, index)
         values = torch.where(first >= num_scores, torch.inf, values.squeeze(pool_dim).double())
-        values = torch.where(level <= 0, -torch.inf, values)
-        return values.to(self.ordered.dtype)
+        return _extremes(values, level).to(self.ordered.dtype)
 
     def _uniform_threshold(self, level: Tensor) -> Tensor:
         num_scores, kept = self.ordered.shape[0], tuple(self.ordered.shape[1:])
@@ -136,8 +135,7 @@ class EmpiricalDistribution(ScoreDistribution):
         source = self.ordered.unsqueeze(0).expand(index.shape[0], num_scores, *kept)
         values = torch.gather(source, 1, index.unsqueeze(1)).squeeze(1).reshape(shape)
         values = torch.where(rank > num_scores, torch.inf, values.to(torch.float64))
-        values = torch.where(level <= 0, -torch.inf, values)
-        return values.to(self.ordered.dtype)
+        return _extremes(values, level).to(self.ordered.dtype)
 
     def level(self, scores: Tensor) -> Tensor:
         scores = torch.as_tensor(scores, device=self.ordered.device)
@@ -157,6 +155,16 @@ class EmpiricalDistribution(ScoreDistribution):
         if self.cumulative is None or self.cumulative.ndim == self.ordered.ndim:
             return self
         return EmpiricalDistribution(self.ordered, self.cumulative[index], self.test_weight)
+
+
+def _extremes(values: Tensor, level: Tensor) -> Tensor:
+    """Apply the conventions at the ends: ``alpha <= 0`` covers all, ``alpha >= 1`` nothing.
+
+    Without them, a test weight of 0 would give the largest pool score at ``alpha = 0``,
+    and the long-run guarantee of the ACI family relies on an unbounded region there.
+    """
+    values = torch.where(level >= 1, torch.inf, values)
+    return torch.where(level <= 0, -torch.inf, values)
 
 
 __all__ = ["TOLERANCE", "EmpiricalDistribution", "ScoreDistribution"]

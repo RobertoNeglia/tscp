@@ -1,11 +1,13 @@
 """Nonexchangeable conformal prediction."""
 
 from tscp.methods.base import ConformalPredictor
+from tscp.registry import register
 from tscp.scores import AbsoluteScore, Score
 from tscp.sources import ExpandingSource, Source
 from tscp.weights import ExponentialWeights
 
 
+@register("method", "nexcp")
 class NexCP(ConformalPredictor):
     """Nonexchangeable conformal prediction (Barber, Candès, Ramdas & Tibshirani, 2023).
 

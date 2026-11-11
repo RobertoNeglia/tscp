@@ -7,30 +7,28 @@ from tscp.datasets import gaussian_control, variance_shift
 from tscp.methods import ACI, SplitCP
 from tscp.quantile import uniform_quantile
 from tscp.regions import Box
-from tscp.scores import AbsoluteScore, CQRScore, NormalizedScore, Score, SignedScore
+from tscp.scores import AbsoluteScore, CQRScore, NormalizedScore, SignedScore
+from tscp.testing import MaxAbsScore, check_score, with_missing_targets
+
+SCORES = {
+    "absolute": AbsoluteScore,
+    "signed": SignedScore,
+    "signed_skewed": lambda: SignedScore(lower_share=0.2),
+    "normalized": lambda: NormalizedScore("scale"),
+    "normalized_fitted": NormalizedScore,
+    "cqr": CQRScore,
+    "cqr_asymmetric": lambda: CQRScore(asymmetric=True),
+    "max_abs": MaxAbsScore,
+}
 
 
 def split_cp(score, archive, alpha=0.1):
     return SplitCP(score=score, alpha=alpha).fit(archive).calibrate(archive).predict(archive)
 
 
-def with_missing_targets(archive, fraction: float, seed: int = 0):
-    generator = torch.Generator().manual_seed(seed)
-    observed = torch.rand(archive.residuals.shape, generator=generator) > fraction
-    return replace(archive, residuals=archive.residuals * observed, observed=observed)
-
-
-class MaxAbsScore(Score):
-    """The largest absolute residual over the horizon: one box per series."""
-
-    reduce_dims = ("step",)
-
-    def forward(self, rows):
-        return rows.residuals.abs().amax(dim=1)
-
-    def region(self, threshold, rows):
-        bound = threshold.unsqueeze(-1).expand(*threshold.shape, rows.horizon)
-        return Box(-bound, bound, event_dims=("step",))
+@pytest.mark.parametrize("name", sorted(SCORES))
+def test_scores_keep_the_score_contract(name):
+    check_score(SCORES[name])
 
 
 @pytest.mark.parametrize("share", [0.5, 0.2])

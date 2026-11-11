@@ -18,5 +18,11 @@ print(evaluate(region, archive.split("test"), alpha=0.1, window=200))
 ```{toctree}
 :maxdepth: 2
 
+concepts
+tutorials/compose
+tutorials/component
+tutorials/learned
+tutorials/plugin
+tutorials/production
 api
 ```

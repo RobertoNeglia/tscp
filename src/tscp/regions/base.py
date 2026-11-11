@@ -33,6 +33,16 @@ def move_event_dims(values: Tensor, event_dims: tuple[str, ...]) -> Tensor:
     return values.permute(*range(lead), *kept, *event)
 
 
+def restore_event_dims(values: Tensor, event_dims: tuple[str, ...]) -> Tensor:
+    """Invert :func:`move_event_dims`: reorder ``[..., *kept, *event]`` back to ``[..., H, N]``."""
+    if values.ndim < 2:
+        raise ValueError("expected values of shape [..., *kept, *event] with two residual dims")
+    order = [name for name in RESIDUAL_DIMS if name not in event_dims]
+    order += [name for name in RESIDUAL_DIMS if name in event_dims]
+    lead = values.ndim - 2
+    return values.permute(*range(lead), *(lead + order.index(name) for name in RESIDUAL_DIMS))
+
+
 class Region:
     """A batch of prediction regions, one per query origin and kept element.
 
@@ -120,4 +130,10 @@ def event_size(shape: torch.Size, event_ndim: int) -> int:
     return math.prod(shape[len(shape) - event_ndim :]) if event_ndim else 1
 
 
-__all__ = ["RESIDUAL_DIMS", "Region", "check_event_dims", "move_event_dims"]
+__all__ = [
+    "RESIDUAL_DIMS",
+    "Region",
+    "check_event_dims",
+    "move_event_dims",
+    "restore_event_dims",
+]

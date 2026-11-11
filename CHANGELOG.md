@@ -37,5 +37,34 @@ All notable changes to tscp are listed here. The format follows
   and `evaluate`, which returns a `Report` with per-step and joint coverage for any
   region type.
 - Synthetic archives: a Gaussian control and a variance shift.
+- Feature maps, computed causally from a row's timeline: `ResidualHistory` (the last
+  residuals known at each origin, per step), `Phase` (position in a cycle of base
+  steps), `Calendar` (minute to day of year, from timestamps), `ContextColumns` and
+  `Concat`.
+- Optional archive `timestamps` (int64 nanoseconds, hashed). Archive files are schema
+  version 2; version 1 files still load.
+- `tscp.nn` for learned components: `pinball_loss`, `interval_score`, `RowBatches` of
+  archive rows with their features, `train` (seeded, with early stopping on the
+  validation split) and `seeded`. `examples/learned_score.py` fits a score whose scale is
+  a small network on the context.
+- `context_scale`: a synthetic control whose error scale follows a known covariate.
+- Batch production: `ResidualArchive.from_forecasts` builds an archive from a backtest's
+  arrays (NaN truth means unobserved; timestamps as int64 nanoseconds or `datetime64`),
+  and `targets()` gives the truth back. `save_method` and `load_method` keep a fitted
+  method in one `.npz` file, without pickle; components whose fitted state lives outside
+  torch set `refit_on_load`. Fresh components load fitted state whose shape depends on
+  the data. `examples/production.py` runs the whole workflow.
+- A `py.typed` marker, for type checkers.
+- `tscp.testing`: checks that a method or component keeps tscp's contracts
+  (`check_method`, `check_score`, `check_weights`, `check_quantile_model`,
+  `check_online_update`, `check_region`), with `synthetic_archive` and `MaxAbsScore`.
+  tscp checks its own presets and components with them.
+- `tscp.registry`: components and presets registered by kind and short name. `register`
+  adds new ones; a taken name raises unless `replace=True`. Plugins register through
+  the `tscp.plugins` entry-point group and are loaded when a name or a config's class is
+  not found. `compose` builds a method from a spec of short names, such as one read from
+  YAML; `examples/plugin` is an installable example plugin.
 - Recorded constructor configs (`to_config`, `from_config`) and config hashes.
-- Sphinx docs, CI, pre-commit and a quickstart example.
+- Sphinx docs with a concepts page and tutorials (composing a method, writing a component,
+  a learned component and a plugin, batch production) whose code lives in `examples/`
+  and runs in the tests; CI that builds them with warnings as errors; pre-commit.

@@ -1,0 +1,12 @@
+# Settings for examples/production.py. The horizon lives here, not in the script.
+horizon: 3
+num_hours: 3000
+start: "2026-01-05T00"
+seed: 0
+sizes: {fit: 0.2, calibration: 0.3, test: null}
+method:
+  score: signed
+  source: expanding
+  weights: {name: exponential, decay: 0.995}
+  update: {name: aci, gamma: 0.005}
+  alpha: 0.1

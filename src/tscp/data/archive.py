@@ -4,11 +4,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+import numpy as np
 import torch
 from torch import Tensor
 
 from tscp.data.availability import known_counts, target_times
-from tscp.data.splits import SplitPlan
+from tscp.data.splits import SplitPlan, chronological_split
 from tscp.utils.hashing import array_fingerprint
 
 
@@ -19,6 +20,20 @@ def _int_vector(values, name: str, size: int, device: torch.device) -> Tensor:
     if vector.dtype.is_floating_point or vector.dtype == torch.bool:
         raise ValueError(f"{name} must hold integers")
     return vector.to(torch.int64)
+
+
+def _as_cube(values, name: str) -> Tensor:
+    """``[T]``, ``[T, H]`` or ``[T, H, N]`` values as a floating ``[T, H, N]`` tensor."""
+    values = torch.as_tensor(values)
+    if not values.is_floating_point():
+        values = values.to(torch.get_default_dtype())
+    if values.ndim == 1:
+        return values[:, None, None]
+    if values.ndim == 2:
+        return values[:, :, None]
+    if values.ndim == 3:
+        return values
+    raise ValueError(f"{name} must have shape [T], [T, H] or [T, H, N]")
 
 
 @dataclass(frozen=True, eq=False)
@@ -82,6 +97,8 @@ class ResidualArchive:
             stored as exactly 0.
         graph: Graph over the ``N`` series.
         series: Names of the ``N`` series.
+        timestamps: ``[T]`` int64 times of the origins, in nanoseconds since the Unix epoch
+            (UTC), strictly increasing. Optional; calendar features read them.
         provenance: JSON-serializable metadata: dataset, forecaster, horizon, protocol.
         timeline: For a row subset, the whole archive its rows were taken from, or the part
             of it up to where the subset's holder may look. Set by :meth:`select` and
@@ -100,6 +117,7 @@ class ResidualArchive:
     observed: Tensor | None = None
     graph: Graph | None = None
     series: tuple[str, ...] = ()
+    timestamps: Tensor | None = None
     provenance: Mapping[str, Any] = field(default_factory=dict)
     timeline: "ResidualArchive | None" = None
     rows: Tensor | None = None
@@ -171,6 +189,12 @@ class ResidualArchive:
             raise ValueError("series must name every series")
         assign(self, "series", series)
 
+        if self.timestamps is not None:
+            timestamps = _int_vector(self.timestamps, "timestamps", num_origins, device)
+            if (timestamps.diff() <= 0).any():
+                raise ValueError("timestamps must strictly increase")
+            assign(self, "timestamps", timestamps)
+
         if self.graph is not None:
             if self.graph.num_nodes != num_series:
                 raise ValueError("graph.num_nodes must equal the number of series")
@@ -232,6 +256,96 @@ class ResidualArchive:
         """``[T, H]`` target time of each (origin, step)."""
         return target_times(self.origins, self.steps)
 
+    @classmethod
+    def from_forecasts(
+        cls,
+        truth,
+        forecasts,
+        *,
+        origins=None,
+        steps=None,
+        sizes: Mapping[str, int | float | None] | None = None,
+        splits: SplitPlan | Mapping[str, Tensor] | None = None,
+        outputs: Mapping[str, Tensor] | None = None,
+        context=None,
+        context_names: tuple[str, ...] = (),
+        timestamps=None,
+        series: tuple[str, ...] = (),
+        provenance: Mapping[str, Any] | None = None,
+    ) -> "ResidualArchive":
+        """Build an archive from a forecaster's backtest: its forecasts and the truth.
+
+        The residual is ``truth - forecast``. A NaN in ``truth`` marks a target that was
+        not observed; its residual is stored as 0 and its forecast may be NaN too.
+
+        Args:
+            truth: ``[T, H, N]`` targets, or ``[T, H]`` for one series, or ``[T]`` for one
+                step and one series.
+            forecasts: Point forecasts of the same shape, finite wherever the truth is
+                observed.
+            origins: ``[T]`` forecast origins in base time steps; ``0 .. T - 1`` by default.
+            steps: ``[H]`` horizon steps; ``1 .. H`` by default.
+            sizes: Split sizes for :func:`~tscp.data.chronological_split`.
+            splits: An explicit split plan instead of ``sizes``.
+            outputs: Other forecaster outputs, each ``[T, H, N, ...]``.
+            context: ``[T, C]`` or ``[T, N, C]`` covariates known at each origin.
+            context_names: Names of the context columns.
+            timestamps: ``[T]`` origin times, as int64 nanoseconds since the epoch or as a
+                ``numpy.datetime64`` array in any unit.
+            series: Names of the series.
+            provenance: JSON-serializable metadata.
+
+        Raises:
+            ValueError: If shapes disagree, a forecast is missing where the truth is
+                observed, or both ``sizes`` and ``splits`` are given.
+        """
+        truth, forecasts = _as_cube(truth, "truth"), _as_cube(forecasts, "forecasts")
+        if truth.shape != forecasts.shape:
+            raise ValueError("truth and forecasts must have the same shape")
+        forecasts = forecasts.to(truth.dtype)
+        observed = ~torch.isnan(truth)
+        if not torch.isfinite(forecasts[observed]).all():
+            raise ValueError("forecasts must be finite wherever the truth is observed")
+        residuals = torch.where(observed, truth - forecasts, torch.zeros((), dtype=truth.dtype))
+        num_origins, horizon, _ = truth.shape
+        origins = torch.arange(num_origins) if origins is None else origins
+        steps = torch.arange(1, horizon + 1) if steps is None else steps
+        if sizes is not None and splits is not None:
+            raise ValueError("give sizes or splits, not both")
+        if sizes is not None:
+            splits = chronological_split(torch.as_tensor(origins), torch.as_tensor(steps), sizes)
+        if isinstance(timestamps, np.ndarray) and timestamps.dtype.kind == "M":
+            timestamps = timestamps.astype("datetime64[ns]").astype(np.int64)
+        return cls(
+            residuals=residuals,
+            origins=origins,
+            steps=steps,
+            splits=splits,
+            forecasts=forecasts,
+            outputs=dict(outputs or {}),
+            context=context,
+            context_names=tuple(context_names),
+            observed=None if bool(observed.all()) else observed,
+            timestamps=timestamps,
+            series=tuple(series),
+            provenance=dict(provenance or {}),
+        )
+
+    def targets(self) -> Tensor:
+        """``[T, H, N]`` targets: forecasts plus residuals, NaN where unobserved.
+
+        This inverts :meth:`from_forecasts` up to floating-point rounding.
+
+        Raises:
+            ValueError: If the archive has no forecasts.
+        """
+        if self.forecasts is None:
+            raise ValueError("targets() needs the archive's forecasts")
+        values = self.forecasts + self.residuals
+        if self.observed is None:
+            return values
+        return torch.where(self.observed, values, torch.full((), torch.nan, dtype=values.dtype))
+
     def known_counts(self, origins: Tensor) -> Tensor:
         """``[Q, H]``: how many leading rows have a known residual at each origin, per step.
 
@@ -284,6 +398,7 @@ class ResidualArchive:
             outputs={name: value[index] for name, value in self.outputs.items()},
             context=take(self.context),
             observed=take(self.observed),
+            timestamps=take(self.timestamps),
             **fields,
         )
 
@@ -314,6 +429,7 @@ class ResidualArchive:
             outputs={name: value.to(device) for name, value in self.outputs.items()},
             context=move(self.context),
             observed=move(self.observed),
+            timestamps=move(self.timestamps),
             graph=None if self.graph is None else self.graph.to(device),
             timeline=None if self.timeline is None else self.timeline.to(device),
             rows=move(self.rows),
@@ -333,6 +449,8 @@ class ResidualArchive:
             arrays["context"] = self.context
         if self.observed is not None:
             arrays["observed"] = self.observed
+        if self.timestamps is not None:
+            arrays["timestamps"] = self.timestamps
         if self.graph is not None:
             arrays["graph.edge_index"] = self.graph.edge_index
             if self.graph.edge_weight is not None:
@@ -354,6 +472,7 @@ class ResidualArchive:
                 ("forecasts", self.forecasts),
                 ("context", self.context),
                 ("observed", self.observed),
+                ("timestamps", self.timestamps),
                 ("graph", self.graph),
             )
             if value is not None

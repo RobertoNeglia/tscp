@@ -5,9 +5,11 @@ from torch import Tensor
 
 from tscp.data import ResidualArchive
 from tscp.regions import Interval
+from tscp.registry import register
 from tscp.scores.base import Score
 
 
+@register("score", "cqr")
 class CQRScore(Score):
     """Conformalized quantile regression (Romano, Patterson & Candès, NeurIPS 2019).
 

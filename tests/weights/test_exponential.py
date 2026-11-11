@@ -2,7 +2,15 @@ import pytest
 import torch
 
 from tscp.data import ResidualArchive
+from tscp.testing import check_weights
 from tscp.weights import ExponentialWeights, UniformWeights
+
+
+@pytest.mark.parametrize(
+    "factory", [UniformWeights, ExponentialWeights, lambda: ExponentialWeights(0.9)]
+)
+def test_weights_keep_the_weights_contract(factory):
+    check_weights(factory)
 
 
 def rows(origins) -> ResidualArchive:

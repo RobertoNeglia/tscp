@@ -18,6 +18,11 @@ class Component(ConfigMixin, torch.nn.Module):
     (:meth:`~tscp.utils.config.ConfigMixin.to_config`).
     """
 
+    #: Whether loading a saved method fits this component again, on the fit split of the
+    #: archive it was fitted on, because its fitted state lives outside torch (a forest,
+    #: say) and is not in ``state_dict()``.
+    refit_on_load: bool = False
+
     def fit(self, train: "ResidualArchive", validation: "ResidualArchive | None" = None) -> Self:
         """Fit trainable state.
 
@@ -34,6 +39,23 @@ class Component(ConfigMixin, torch.nn.Module):
         """Whether :meth:`fit` does anything for this component."""
         return type(self).fit is not Component.fit
 
+    def _load_from_state_dict(
+        self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, errors
+    ):
+        # Fitted buffers start as None, and their shape depends on the data, so a fresh
+        # component cannot hold the saved values yet: make room for them, then load.
+        for name, buffer in list(self._buffers.items()):
+            key = prefix + name
+            if name in self._non_persistent_buffers_set or key not in state_dict:
+                continue
+            incoming = state_dict[key]
+            if buffer is None or buffer.shape != incoming.shape:
+                device = buffer.device if buffer is not None else _device_of(self, incoming)
+                self._buffers[name] = torch.empty_like(incoming, device=device)
+        super()._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, errors
+        )
+
     def extra_repr(self) -> str:
         config = self.__dict__.get("_config_arguments", {})
         # Submodules print themselves; None means "use the default", shown as a submodule.
@@ -42,6 +64,13 @@ class Component(ConfigMixin, torch.nn.Module):
             for name, value in config.items()
             if value is not None and not isinstance(value, torch.nn.Module)
         )
+
+
+def _device_of(module: torch.nn.Module, fallback: torch.Tensor) -> torch.device:
+    """The device of a module's first tensor, or of ``fallback`` if it holds none."""
+    for tensor in (*module.parameters(recurse=False), *module.buffers(recurse=False)):
+        return tensor.device
+    return fallback.device
 
 
 __all__ = ["Component"]

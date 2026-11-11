@@ -2,10 +2,12 @@
 
 from tscp.methods.base import ConformalPredictor
 from tscp.online import ACIUpdate
+from tscp.registry import register
 from tscp.scores import AbsoluteScore, Score
 from tscp.sources import ExpandingSource, Source
 
 
+@register("method", "aci")
 class ACI(ConformalPredictor):
     """Adaptive conformal inference (Gibbs & Candès, NeurIPS 2021).
 

@@ -7,9 +7,11 @@ from torch import Tensor
 
 from tscp.data import ResidualArchive
 from tscp.regions import Interval
+from tscp.registry import register
 from tscp.scores.base import Score
 
 
+@register("score", "normalized")
 class NormalizedScore(Score):
     """``|r| / scale``: each error in units of its expected size.
 

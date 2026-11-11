@@ -4,9 +4,11 @@ from torch import Tensor
 
 from tscp.data import ResidualArchive
 from tscp.regions import Interval
+from tscp.registry import register
 from tscp.scores.base import Score
 
 
+@register("score", "absolute")
 class AbsoluteScore(Score):
     """``|r|``, per element; a threshold ``q`` gives the symmetric interval ``[-q, q]``."""
 

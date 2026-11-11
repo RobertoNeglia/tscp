@@ -4,6 +4,12 @@ import torch
 from tscp.methods import ACI
 from tscp.online import ACIUpdate
 from tscp.sources import ExpandingSource, HoldoutSource
+from tscp.testing import check_online_update
+
+
+@pytest.mark.parametrize("gamma", [0.005, 0.05])
+def test_aci_keeps_the_online_update_contract(gamma):
+    check_online_update(lambda: ACIUpdate(gamma))
 
 
 class Doubling:

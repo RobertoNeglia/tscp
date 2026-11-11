@@ -5,6 +5,10 @@ import pytest
 import torch
 
 from tscp.data import Graph, ResidualArchive, load_archive, save_archive
+from tscp.data.io import SCHEMA_VERSION
+
+HOUR = 3_600_000_000_000  # nanoseconds
+NEW_YEAR = 1_767_225_600_000_000_000  # 2026-01-01 00:00 UTC
 
 
 def full_archive() -> ResidualArchive:
@@ -24,6 +28,7 @@ def full_archive() -> ResidualArchive:
         observed=observed,
         graph=Graph(torch.tensor([[0, 1], [1, 2]]), num_nodes=3, edge_weight=torch.rand(2)),
         series=("a", "b", "c"),
+        timestamps=HOUR * torch.arange(12) * 2 + NEW_YEAR,
         provenance={"dataset": "unit", "horizon": 2},
     )
 
@@ -72,10 +77,10 @@ def test_other_schema_versions_are_refused(tmp_path):
     save_archive(full_archive(), path)
     with np.load(path, allow_pickle=False) as data:
         header = json.loads(str(data["header"].item()))
-    header["schema_version"] = 2
-    _rewrite(path, tmp_path / "v2.npz", header=np.asarray(json.dumps(header)))
-    with pytest.raises(ValueError, match="schema version 2"):
-        load_archive(tmp_path / "v2.npz")
+    header["schema_version"] = 3
+    _rewrite(path, tmp_path / "v3.npz", header=np.asarray(json.dumps(header)))
+    with pytest.raises(ValueError, match="schema version 3"):
+        load_archive(tmp_path / "v3.npz")
 
 
 def test_foreign_files_are_refused(tmp_path):
@@ -101,3 +106,26 @@ def test_provenance_must_be_json(tmp_path, provenance):
     )
     with pytest.raises(ValueError, match="JSON"):
         save_archive(bad, tmp_path / "bad.npz")
+
+
+def test_timestamps_are_written_with_schema_2(tmp_path):
+    path = tmp_path / "archive.npz"
+    save_archive(full_archive(), path)
+    with np.load(path, allow_pickle=False) as data:
+        assert json.loads(str(data["header"].item()))["schema_version"] == SCHEMA_VERSION == 2
+    assert torch.equal(load_archive(path).timestamps, full_archive().timestamps)
+
+
+def test_version_1_files_still_load(tmp_path):
+    original = full_archive()
+    without = ResidualArchive(
+        residuals=original.residuals, origins=original.origins, steps=original.steps
+    )
+    path = tmp_path / "archive.npz"
+    save_archive(without, path)
+    with np.load(path, allow_pickle=False) as data:
+        header = json.loads(str(data["header"].item()))
+    header["schema_version"] = 1
+    _rewrite(path, tmp_path / "v1.npz", header=np.asarray(json.dumps(header)))
+    loaded = load_archive(tmp_path / "v1.npz")
+    assert loaded.timestamps is None and loaded.fingerprint() == without.fingerprint()

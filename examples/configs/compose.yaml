@@ -1,0 +1,18 @@
+# Settings for examples/compose.py. The horizon lives here, not in the script.
+horizon: 1
+alpha: 0.1
+num_origins: 3000
+seed: 0
+window: 200  # origins per window for the worst-window coverage
+methods:
+  split: {method: split}
+  nexcp: {method: nexcp, decay: 0.99}
+  signed_aci:
+    score: signed
+    source: expanding
+    update: {name: aci, gamma: 0.005}
+  weighted_aci:
+    score: {name: normalized}
+    source: expanding
+    weights: {name: exponential, decay: 0.995}
+    update: {name: aci, gamma: 0.005}

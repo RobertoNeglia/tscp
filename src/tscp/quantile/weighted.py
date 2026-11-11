@@ -8,6 +8,7 @@ from torch import Tensor
 from tscp.data import ResidualArchive
 from tscp.quantile.base import Pool, QuantileModel
 from tscp.quantile.distribution import EmpiricalDistribution
+from tscp.registry import register
 from tscp.typing import Alpha
 
 _MAX_ELEMENTS = 2**23
@@ -18,7 +19,7 @@ def uniform_quantile(scores: Tensor, alpha: Alpha, test_weight: float = 1.0) -> 
 
     The threshold is the ``ceil((1 - alpha) * (n + w))``-th smallest of the ``n`` pool
     scores, where ``w`` is the test point's weight (1 for split conformal); ``+inf`` when
-    that rank exceeds ``n`` and ``-inf`` when ``1 - alpha <= 0``.
+    that rank exceeds ``n`` or ``alpha <= 0``, and ``-inf`` when ``alpha >= 1``.
 
     Args:
         scores: ``[P, *kept]`` pool scores.
@@ -42,8 +43,8 @@ def weighted_quantile(
     ``sum(w_i for s_i <= s) / (sum(w_i) + test_weight) >= 1 - alpha``: the
     ``(1 - alpha)``-quantile of the weighted pool with the test point's weight at
     ``+inf`` (Tibshirani et al., NeurIPS 2019; Barber et al., Annals of Statistics 2023).
-    It is ``+inf`` when the pool never reaches ``1 - alpha`` and ``-inf`` when
-    ``1 - alpha <= 0``. With all weights 1 it equals :func:`uniform_quantile`.
+    It is ``+inf`` when the pool never reaches ``1 - alpha`` or ``alpha <= 0``, and
+    ``-inf`` when ``alpha >= 1``. With all weights 1 it equals :func:`uniform_quantile`.
 
     Args:
         scores: ``[P, *kept]`` pool scores.
@@ -70,6 +71,7 @@ def weighted_quantile(
     return out
 
 
+@register("quantile", "weighted")
 class WeightedQuantile(QuantileModel):
     """Empirical conformal quantile of (weighted) scores, with the test point at ``+inf``.
 

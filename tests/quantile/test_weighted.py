@@ -6,6 +6,12 @@ import torch
 import tscp.quantile.weighted as weighted_module
 from tscp.data import ResidualArchive
 from tscp.quantile import Pool, WeightedQuantile, uniform_quantile, weighted_quantile
+from tscp.testing import check_quantile_model
+
+
+@pytest.mark.parametrize("test_weight", [1.0, 0.5, 0.0])
+def test_weighted_quantile_keeps_the_quantile_model_contract(test_weight):
+    check_quantile_model(lambda: WeightedQuantile(test_weight=test_weight))
 
 
 def brute_force(scores, weights, alpha, test_weight=1.0):

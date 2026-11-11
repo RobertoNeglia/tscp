@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tscp-example-plugin"
+version = "0.1.0"
+description = "An example plugin that adds a weight scheme and a method to tscp"
+requires-python = ">=3.11"
+dependencies = ["tscp"]
+
+# tscp imports this module when a spec or config names something it does not know.
+[project.entry-points."tscp.plugins"]
+example = "tscp_example_plugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tscp_example_plugin"]

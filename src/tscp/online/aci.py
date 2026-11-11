@@ -5,8 +5,10 @@ from torch import Tensor
 
 from tscp.online.base import OnlineUpdate
 from tscp.quantile import ScoreDistribution
+from tscp.registry import register
 
 
+@register("update", "aci")
 class ACIUpdate(OnlineUpdate):
     """Adaptive conformal inference (Gibbs & Candès, NeurIPS 2021).
 

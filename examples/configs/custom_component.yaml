@@ -1,0 +1,6 @@
+# Settings for examples/custom_component.py.
+alpha: 0.1
+num_origins: 6000
+period: 24
+decay: 0.98
+seed: 0

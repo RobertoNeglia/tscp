@@ -4,9 +4,11 @@ import torch
 from torch import Tensor
 
 from tscp.data import ResidualArchive
+from tscp.registry import register
 from tscp.weights.base import Weights
 
 
+@register("weights", "exponential")
 class ExponentialWeights(Weights):
     """``decay ** (query_origin - pool_origin)``: recent errors count more.
 

@@ -17,9 +17,12 @@ from tscp.data.archive import Graph, ResidualArchive
 from tscp.data.splits import SplitPlan
 
 FORMAT = "tscp.residual_archive"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+"""The schema version :func:`save_archive` writes. Version 2 added ``timestamps``."""
+READABLE_VERSIONS = (1, 2)
+"""Schema versions :func:`load_archive` reads."""
 
-_PLAIN = ("residuals", "origins", "steps", "forecasts", "context", "observed")
+_PLAIN = ("residuals", "origins", "steps", "forecasts", "context", "observed", "timestamps")
 _PREFIXES = ("split.", "output.", "graph.")
 
 
@@ -63,10 +66,10 @@ def load_archive(path: str | Path) -> ResidualArchive:
         header = json.loads(str(data["header"].item()))
         if header.get("format") != FORMAT:
             raise ValueError(f"{path} is not a tscp residual archive")
-        if header.get("schema_version") != SCHEMA_VERSION:
+        if header.get("schema_version") not in READABLE_VERSIONS:
             raise ValueError(
                 f"{path} has schema version {header.get('schema_version')}; "
-                f"this tscp reads version {SCHEMA_VERSION}"
+                f"this tscp reads versions {READABLE_VERSIONS}"
             )
         names = [name for name in data.files if name != "header"]
         unexpected = [n for n in names if n not in _PLAIN and not n.startswith(_PREFIXES)]
@@ -93,6 +96,7 @@ def load_archive(path: str | Path) -> ResidualArchive:
         context=arrays.get("context"),
         context_names=tuple(header["context_names"]),
         observed=arrays.get("observed"),
+        timestamps=arrays.get("timestamps"),
         graph=graph,
         series=tuple(header["series"]),
         provenance=header["provenance"],
@@ -102,4 +106,4 @@ def load_archive(path: str | Path) -> ResidualArchive:
     return archive
 
 
-__all__ = ["FORMAT", "SCHEMA_VERSION", "load_archive", "save_archive"]
+__all__ = ["FORMAT", "READABLE_VERSIONS", "SCHEMA_VERSION", "load_archive", "save_archive"]

@@ -8,6 +8,7 @@ Gaussian data are controls, for checking validity, not benchmarks.
 """
 
 from collections.abc import Mapping
+from dataclasses import replace
 
 import torch
 from torch import Tensor
@@ -127,4 +128,50 @@ def variance_shift(
     )
 
 
-__all__ = ["DEFAULT_SIZES", "gaussian_control", "variance_shift"]
+def context_scale(
+    *,
+    horizon: int,
+    num_origins: int = 2000,
+    num_series: int = 1,
+    strength: float = 1.0,
+    sizes: Mapping[str, int | float | None] | None = None,
+    seed: int = 0,
+) -> ResidualArchive:
+    """A Gaussian random walk whose next innovation scale is set by a known covariate.
+
+    Each origin ``t`` has a covariate ``x_t``, a standard normal draw stored as the
+    context column ``x``, and the innovation that follows it has standard deviation
+    ``exp(strength * x_t)``. The one-step residual of origin ``t`` therefore has a known
+    conditional scale, and a score that learns the scale from the context gives narrower
+    intervals than one that ignores it. Gaussian, so a control, not a benchmark.
+
+    Args:
+        horizon: Number of steps ``H``; take it from the experiment config.
+        num_origins: Number of forecast origins ``T``.
+        num_series: Number of independent series ``N``.
+        strength: How strongly the covariate scales the innovations.
+        sizes: Split sizes; :data:`DEFAULT_SIZES` if None.
+        seed: Seed of the generator.
+    """
+    generator = torch.Generator().manual_seed(seed + 1)
+    covariate = torch.randn(num_origins + horizon, generator=generator)
+    scales = torch.ones(num_origins + horizon)
+    scales[1:] = torch.exp(strength * covariate[:-1])  # x_t scales the innovation at t + 1
+    provenance = {
+        "dataset": "context_scale",
+        "role": "control",
+        "strength": strength,
+        "forecaster": "last value",
+    }
+    archive = _random_walk_archive(
+        scales,
+        horizon=horizon,
+        num_series=num_series,
+        sizes=sizes,
+        seed=seed,
+        provenance=provenance,
+    )
+    return replace(archive, context=covariate[:num_origins, None], context_names=("x",))
+
+
+__all__ = ["DEFAULT_SIZES", "context_scale", "gaussian_control", "variance_shift"]

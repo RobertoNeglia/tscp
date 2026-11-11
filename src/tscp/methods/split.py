@@ -1,10 +1,12 @@
 """Split conformal prediction."""
 
 from tscp.methods.base import ConformalPredictor
+from tscp.registry import register
 from tscp.scores import AbsoluteScore, Score
 from tscp.sources import HoldoutSource
 
 
+@register("method", "split")
 class SplitCP(ConformalPredictor):
     """Split conformal prediction (Vovk et al., 2005; Lei et al., JASA 2018).
 

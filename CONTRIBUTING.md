@@ -20,7 +20,8 @@ online update, a residual source or a region type.
 
 1. Put it in its own file in the axis subpackage, for example
    `src/tscp/weights/sliding_window.py`, subclassing that axis's base class.
-2. Export it in the subpackage's `__init__.py` and `__all__`.
+2. Export it in the subpackage's `__init__.py` and `__all__`, and register it under a short
+   name with `@register(kind, name)` from `tscp.registry`, so specs can name it.
 3. Give it only JSON-friendly constructor arguments (numbers, strings, lists, dicts or
    other components), so its config records and rebuilds.
 4. Register fitted tensors as parameters or buffers. If it has a fit step, override
@@ -28,7 +29,9 @@ online update, a residual source or a region type.
    `validation` split when the plan has one. Both are row subsets whose `timeline` ends
    where the split ends.
 5. Add tests at the mirrored path, for example `tests/weights/test_sliding_window.py`.
-   Test exact properties where the theory gives them.
+   Run the axis's check from `tscp.testing` (`check_score`, `check_weights`,
+   `check_quantile_model`, `check_online_update`, `check_region` or
+   `check_feature_map`), and test exact properties where the theory gives them.
 6. List it in `CHANGELOG.md` under "Unreleased".
 
 What each axis receives and returns:
@@ -57,11 +60,15 @@ A method is a preset: one component per axis.
 
 1. Subclass `tscp.methods.ConformalPredictor` in `src/tscp/methods/<name>.py` and wire the
    components in `__init__`, exposing only the method's own hyperparameters.
-2. Register it in `method_map` in `src/tscp/methods/__init__.py`. The generic tests in
-   `tests/methods/test_presets.py` then run on it with every score: causality, split
-   discipline, config round trip and device.
+2. Register it with `@register("method", name)` and import it in
+   `src/tscp/methods/__init__.py`. The generic tests in `tests/methods/test_presets.py`
+   then run `tscp.testing.check_method` on it with every score: causality, split
+   discipline, config round trip, saving and loading, and devices.
 3. Check it against the authors' code or published numbers. The docstring cites the
    paper and lists every deviation under "Deviation".
+
+The tutorials in `docs/source/tutorials/` walk through a component, a learned component
+and a plugin; their code lives in `examples/`, and `tests/test_examples.py` runs it.
 
 ## Style
 

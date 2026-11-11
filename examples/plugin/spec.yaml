@@ -1,0 +1,5 @@
+# A method that combines tscp's components with the plugin's weight scheme.
+score: signed
+source: expanding
+weights: {name: linear_decay, window: 150}
+alpha: 0.1

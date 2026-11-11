@@ -60,6 +60,24 @@
 .. automodule:: tscp.features
 ```
 
+## Registry and plugins
+
+```{eval-rst}
+.. automodule:: tscp.registry
+```
+
+## Learned components
+
+```{eval-rst}
+.. automodule:: tscp.nn
+```
+
+## Checks
+
+```{eval-rst}
+.. automodule:: tscp.testing
+```
+
 ## Datasets
 
 ```{eval-rst}

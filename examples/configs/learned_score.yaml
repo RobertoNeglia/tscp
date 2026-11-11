@@ -1,0 +1,8 @@
+# Settings for examples/learned_score.py. The horizon lives here, not in the script.
+horizon: 1
+alpha: 0.1
+num_origins: 4000
+strength: 1.0
+seed: 0
+sizes: {fit: 0.3, validation: 0.1, calibration: 0.2, test: null}
+network: {hidden: 16, epochs: 200, patience: 20, seed: 0}

@@ -8,6 +8,7 @@ arbitrary code.
 """
 
 import functools
+import importlib
 import inspect
 from collections.abc import Mapping
 from typing import Any
@@ -95,19 +96,39 @@ def _decode(value: Any) -> Any:
     return value
 
 
+def _find_class(name: str) -> type | None:
+    """Find a class that has not registered yet: import tscp's module, or load plugins."""
+    module = name.rpartition(".")[0]
+    if module == "tscp" or module.startswith("tscp."):
+        try:
+            importlib.import_module(module)
+        except ImportError:
+            return None
+    else:
+        from tscp import registry  # here, not at the top: the registry imports this module
+
+        registry.load_plugins()
+    return _CLASSES.get(name)
+
+
 def from_config(config: Mapping[str, Any]) -> ConfigMixin:
     """Rebuild an object from :meth:`ConfigMixin.to_config` output.
 
+    tscp's own modules are imported as needed, and installed plugins (see
+    :mod:`tscp.registry`) are loaded when a class is not found otherwise. Only
+    :class:`ConfigMixin` subclasses are built, so a config cannot run arbitrary code.
+
     Raises:
-        ValueError: If the class is unknown. The module that defines it must have been
-            imported, which is always true for tscp's own classes once their subpackage loads.
+        ValueError: If no imported module, tscp module or installed plugin defines the class.
     """
     if set(config) != {"class", "args"}:
         raise ValueError("a config must have exactly the keys 'class' and 'args'")
     name = config["class"]
-    cls = _CLASSES.get(name)
+    cls = _CLASSES.get(name) or _find_class(name)
     if cls is None:
-        raise ValueError(f"unknown class {name!r}; import the module that defines it first")
+        raise ValueError(
+            f"unknown class {name!r}; import the module that defines it, or install its plugin"
+        )
     return cls(**{key: _decode(value) for key, value in config["args"].items()})
 
 

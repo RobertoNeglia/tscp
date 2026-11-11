@@ -85,6 +85,7 @@ class ConformalPredictor(Component):
                 raise TypeError(f"{axis} must be a {expected.__name__}, not {type(component)}")
         self.alpha = float(alpha)
         self.chunk_size = int(chunk_size)
+        self.fit_fingerprint: str | None = None
         # Calibration state: moves with .to(device), stays out of state_dict().
         self.register_buffer("pool_scores", None, persistent=False)
         self.register_buffer("pool_origins", None, persistent=False)
@@ -112,6 +113,8 @@ class ConformalPredictor(Component):
         validation = archive.split("validation") if "validation" in archive.splits else None
         for axis in trainable:
             getattr(self, axis).fit(train, validation)
+        # Which data the fitted state came from, for saved methods (tscp.methods.io).
+        self.fit_fingerprint = archive.fingerprint()
         return self
 
     def calibrate(self, archive: ResidualArchive) -> Self:
