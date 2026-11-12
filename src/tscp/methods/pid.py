@@ -13,8 +13,10 @@ class ConformalPI(ConformalPredictor):
 
     Uses the authors' zero-initialized quantile tracker and lagged tangent integrator.
     Deviation: forecasts are supplied externally; delayed and missing outcomes use
-    per-element released-score histories. The empirical calibration distribution is
-    not used by this direct threshold controller.
+    per-element released-score histories. The calibration scores are used only with
+    ``warm_start``, which starts from their split-conformal quantile and scale
+    (:class:`~tscp.online.PIDUpdate`); by default this direct threshold controller
+    starts at zero, as in the reference implementation.
     """
 
     def __init__(
@@ -26,10 +28,11 @@ class ConformalPI(ConformalPredictor):
         lr_window: int = 100,
         score: Score | None = None,
         alpha: float = 0.1,
+        warm_start: bool = False,
     ):
         super().__init__(
             score=score if score is not None else AbsoluteScore(),
-            update=PIDUpdate(lr, csat, ki, proportional_lr, lr_window),
+            update=PIDUpdate(lr, csat, ki, proportional_lr, lr_window, warm_start=warm_start),
             alpha=alpha,
         )
 
@@ -41,7 +44,9 @@ class ConformalPID(ConformalPredictor):
     Defaults to :class:`~tscp.online.ThetaScorecaster`, which requires ``tscp[pid]``.
     Deviation: supplied forecasts remain fixed, available calibration scores initialize
     the scorecaster, and its refits use released observations. Every kept score element
-    runs its own controller and scorecaster. Initial tracker and integrator are zero.
+    runs its own controller and scorecaster. Initial tracker and integrator are zero,
+    unless ``warm_start`` starts the tracker so that the first threshold is the
+    calibration quantile (:class:`~tscp.online.PIDUpdate`).
     """
 
     def __init__(
@@ -54,6 +59,7 @@ class ConformalPID(ConformalPredictor):
         scorecaster: Scorecaster | None = None,
         score: Score | None = None,
         alpha: float = 0.1,
+        warm_start: bool = False,
     ):
         super().__init__(
             score=score if score is not None else AbsoluteScore(),
@@ -64,6 +70,7 @@ class ConformalPID(ConformalPredictor):
                 proportional_lr,
                 lr_window,
                 scorecaster if scorecaster is not None else ThetaScorecaster(),
+                warm_start=warm_start,
             ),
             alpha=alpha,
         )

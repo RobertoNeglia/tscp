@@ -15,7 +15,7 @@ then calibrate and predict chronologically.
 | `windowed` | `WindowedCP` | required `window_size`, `score`, `alpha` |
 | `mondrian` | `MondrianCP` | required `groups`, `score`, `source`, `alpha` |
 | `dtaci` | `DtACI` | `gammas`, `eta`, `sigma`, `score`, `source`, `alpha` |
-| `pi` | `ConformalPI` | `lr`, `csat`, `ki`, `score`, `alpha` |
+| `pi` | `ConformalPI` | `lr`, `csat`, `ki`, `warm_start`, `score`, `alpha` |
 | `pid` | `ConformalPID` | PI settings, `scorecaster`, `score`, `alpha` |
 
 Use `SplitCP(score=SignedScore())` for two-sided calibration,
@@ -60,9 +60,17 @@ mixing rates do not imply exact asymptotic target coverage.
 
 PI combines quantile tracking and the tangent error integrator. PID adds a scorecast.
 `ThetaScorecaster` refits a CPU Theta model from released score history and returns
-torch outputs on the method's device. It returns zero during warm-up, so PID then
-behaves as PI. Install the `pid` extra for Theta; ordinary PI needs no optional package.
+torch outputs on the method's device. Each fit uses one contiguous run of observed
+history: while the run after a gap, such as the split gap, is still short, forecasts
+continue from the earlier run. It returns zero during warm-up, so PID then behaves as
+PI. Install the `pid` extra for Theta; ordinary PI needs no optional package.
 The controller's documented indexing and initialization match its reference fixture.
+
+By default PI and PID start from a zero threshold, as in the reference
+implementation, so the first test intervals are narrow until the tracker catches up.
+`warm_start=True` makes the first threshold the split-conformal quantile of the
+calibration scores and scales the first learning rates by their range; the tracker
+absorbs the first scorecast. The integrator still counts test errors only.
 
 From a source checkout, install optional backends with
 `pip install -e ".[forest,pid]"`. The forest extra pins the author estimator and bounds
@@ -95,8 +103,11 @@ slots and are excluded from quantiles.
 
 **SPCI** requires explicit `lags` and `window_size`. At each query it fits the exact
 author `sklearn-quantile` estimator on valid lag/target pairs inside the rolling window.
-The forecaster remains fixed. Missing query lags or fewer than two valid training pairs
-give an unbounded interval. Install the `forest` extra. The large-sample sampled-forest
+The forecaster remains fixed. Lags and the window are slots on the origin grid, whose
+spacing is the greatest common divisor of the calibration and test origin spacings:
+an absent origin, such as a row between the two splits, is a missing slot, so lag
+vectors never join residuals that are not adjacent in time. Missing query lags or fewer
+than two valid training pairs give an unbounded interval. Install the `forest` extra. The large-sample sampled-forest
 shortcut is omitted, and every refit uses a recorded seed.
 
 `QuantileForest` and `WidthOptimal` are helpers for signed-residual interval methods.
@@ -110,6 +121,11 @@ Independent fixtures under `tests/fixtures` record source revisions, inputs,
 parameters, numerical conventions, tolerances and deviations. Regeneration scripts
 run separately from ordinary tests. The original golden-region fixture continues to
 test regression against earlier tscp behavior.
+
+PID, EnbPI and SPCI run the authors' pinned code, DtACI the authors' pinned R code,
+and AgACI's endpoint aggregation the OPERA package. Split, signed, normalized, CQR,
+NexCP, ACI, windowed and Mondrian calibration, and AgACI's experts, are checked against
+independent evaluations of their equations.
 
 The fixtures verify conformal estimation conditional on supplied forecasts, not the
 forecast-training experiments in the papers. Method docstrings give citations and

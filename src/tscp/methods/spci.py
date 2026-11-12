@@ -30,11 +30,16 @@ class SPCI(_ResidualIntervalMethod):
         large data. Each refit uses an explicit seed. Missing labels are not imputed:
         training pairs with missing lags or targets are excluded, and an unavailable
         query lag or fewer than two valid training pairs gives an unbounded interval.
+        Lags live on the origin grid, whose spacing is the greatest common divisor of
+        the calibration and test origin spacings. An origin absent from both splits,
+        such as a row between them, is a missing slot, so a lag vector never joins
+        residuals that are not adjacent in time.
 
     Args:
-        lags: Number of consecutive released residuals used as each feature vector.
-        window_size: Number of latest released rows from which to construct both
-            training lag vectors and targets. Missing observations consume slots.
+        lags: Number of consecutive origin-grid slots used as each feature vector.
+        window_size: Number of latest origin-grid slots from which to construct both
+            training lag vectors and targets. Missing observations and absent origins
+            consume slots.
         alpha: Target miscoverage level.
         n_estimators: Number of trees in each exact quantile forest.
         max_depth: Maximum tree depth, or None for unrestricted growth.
@@ -89,7 +94,7 @@ class SPCI(_ResidualIntervalMethod):
         self.reset_online()
         bounds = test.residuals.new_empty((len(test), 2))
         probabilities = self.interval.probabilities(self.alpha, device=test.device).flatten()
-        for u, history, valid in self._windows(test):
+        for u, history, valid in self._windows(test, grid=True):
             pairs = self._training_pairs(history, valid)
             if pairs is None:
                 bounds[u] = bounds.new_tensor([-torch.inf, torch.inf])

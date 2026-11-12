@@ -72,6 +72,21 @@ def main():
         expected["aci"].append([-q, q])
         level += gamma * (alpha - int(abs(outcome) > q))
         pool.append(outcome)
+    window, period, missing = 6, 3, 1
+    expected["windowed"], expected["windowed_missing"], expected["mondrian"] = [], [], []
+    for t in range(len(outcomes)):
+        rows = list(calibration) + outcomes[:t]
+        q = quantile([abs(r) for r in rows[-window:]], alpha)
+        expected["windowed"].append([-q, q])
+        # A missing outcome keeps its slot in the window and leaves the quantile.
+        known = [True] * len(calibration) + [i != missing for i in range(t)]
+        recent = zip(rows[-window:], known[-window:], strict=True)
+        q = quantile([abs(r) for r, ok in recent if ok], alpha)
+        expected["windowed_missing"].append([-q, q])
+        origin = origins[len(calibration) + t]
+        same = zip(calibration, origins, strict=False)
+        q = quantile([abs(r) for r, o in same if o % period == origin % period], alpha)
+        expected["mondrian"].append([-q, q])
     fixture = {
         "provenance": {
             "kind": "independent scalar evaluation of published equations",
@@ -83,10 +98,13 @@ def main():
                 "nexcp": "https://arxiv.org/abs/2202.13415v5",
                 "aci": "https://arxiv.org/abs/2106.00170v3",
                 "cqr": "https://arxiv.org/abs/1905.03222v1",
+                "windowed": "https://arxiv.org/abs/2202.13415v5",
+                "mondrian": "https://proceedings.mlr.press/v25/vovk12.html",
             },
             "conventions": "test-point mass 1 at infinity; left inverse weighted CDF; "
             "truth minus forecast; outcomes released before the next origin; "
-            "alpha<=0 unbounded and alpha>=1 empty",
+            "alpha<=0 unbounded and alpha>=1 empty; windows hold the latest released rows, "
+            "a missing row keeps its slot; Mondrian groups are origin mod period",
             "deviations": "fixed external forecasts; expanding calibration for ACI/NexCP; "
             "two-sided CQR is a union-bound extension",
             "tolerance": {"atol": 1e-12, "rtol": 1e-12},
@@ -99,7 +117,14 @@ def main():
             "lower": lower,
             "upper": upper,
         },
-        "parameters": {"alpha": alpha, "decay": decay, "gamma": gamma},
+        "parameters": {
+            "alpha": alpha,
+            "decay": decay,
+            "gamma": gamma,
+            "window": window,
+            "period": period,
+            "missing_test_outcome": missing,
+        },
         "expected": {name: encode(value) for name, value in expected.items()},
     }
     path = Path(__file__).parents[1] / "fixtures" / "references" / "basic.json"

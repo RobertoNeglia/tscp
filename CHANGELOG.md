@@ -25,8 +25,11 @@ All notable changes to tscp are listed here. The format follows
 - Independent equation and pinned author-reference fixtures for calibration and online
   methods, distinct from the existing regression fixture; config-driven examples and
   method documentation describing numerical conventions and deviations.
-
-
+- `warm_start` for `ConformalPI`, `ConformalPID` and `PIDUpdate`: the first threshold is
+  the split-conformal quantile of the calibration scores, and learning rates start from
+  their range. The default still starts at zero, as in the reference implementation.
+- A DtACI fixture from the authors' pinned R code, and scalar references for windowed
+  and Mondrian calibration.
 - Package layout under `src/tscp/`: one subpackage per design axis (`sources`, `scores`,
   `weights`, `quantile`, `online`, `regions`), plus `data`, `methods`, `metrics`,
   `features`, `datasets` and `utils`.
@@ -92,5 +95,10 @@ All notable changes to tscp are listed here. The format follows
 
 ### Fixed
 
+- SPCI keeps lags on the origin grid: absent origins, such as a row between the
+  calibration and test splits, become missing slots instead of joining residuals that
+  are not adjacent in time.
+- `ThetaScorecaster` keeps forecasting from the latest long enough run of history while
+  the run after a gap is still short, instead of returning zero.
 - Source installation guidance for development versions.
 - Registry construction from constructor configs with nested component configurations.

@@ -10,9 +10,11 @@
       "split_signed_normalized": "https://arxiv.org/abs/1604.04173",
       "nexcp": "https://arxiv.org/abs/2202.13415v5",
       "aci": "https://arxiv.org/abs/2106.00170v3",
-      "cqr": "https://arxiv.org/abs/1905.03222v1"
+      "cqr": "https://arxiv.org/abs/1905.03222v1",
+      "windowed": "https://arxiv.org/abs/2202.13415v5",
+      "mondrian": "https://proceedings.mlr.press/v25/vovk12.html"
     },
-    "conventions": "test-point mass 1 at infinity; left inverse weighted CDF; truth minus forecast; outcomes released before the next origin; alpha<=0 unbounded and alpha>=1 empty",
+    "conventions": "test-point mass 1 at infinity; left inverse weighted CDF; truth minus forecast; outcomes released before the next origin; alpha<=0 unbounded and alpha>=1 empty; windows hold the latest released rows, a missing row keeps its slot; Mondrian groups are origin mod period",
     "deviations": "fixed external forecasts; expanding calibration for ACI/NexCP; two-sided CQR is a union-bound extension",
     "tolerance": {
       "atol": 1e-12,
@@ -106,7 +108,10 @@
   "parameters": {
     "alpha": 0.25,
     "decay": 0.93,
-    "gamma": 0.2
+    "gamma": 0.2,
+    "window": 6,
+    "period": 3,
+    "missing_test_outcome": 1
   },
   "expected": {
     "split": [
@@ -283,6 +288,72 @@
       [
         "-inf",
         "inf"
+      ]
+    ],
+    "windowed": [
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -9.0,
+        9.0
+      ],
+      [
+        -9.0,
+        9.0
+      ],
+      [
+        -10.0,
+        10.0
+      ]
+    ],
+    "windowed_missing": [
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -10.0,
+        10.0
+      ]
+    ],
+    "mondrian": [
+      [
+        -4.0,
+        4.0
+      ],
+      [
+        -8.0,
+        8.0
+      ],
+      [
+        -6.0,
+        6.0
+      ],
+      [
+        -4.0,
+        4.0
+      ],
+      [
+        -8.0,
+        8.0
       ]
     ]
   }

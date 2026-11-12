@@ -7,7 +7,8 @@ import pytest
 import torch
 
 from tscp.data import ResidualArchive, SplitPlan
-from tscp.methods import ACI, NexCP, SplitCP
+from tscp.features import Phase
+from tscp.methods import ACI, MondrianCP, NexCP, SplitCP, WindowedCP
 from tscp.scores import CQRScore, NormalizedScore, SignedScore
 
 FIXTURE = json.loads((Path(__file__).parents[1] / "fixtures/references/basic.json").read_text())
@@ -17,9 +18,15 @@ FIXTURE = json.loads((Path(__file__).parents[1] / "fixtures/references/basic.jso
 def test_against_scalar_published_equations(name):
     inputs, parameters = FIXTURE["inputs"], FIXTURE["parameters"]
     residuals = torch.tensor(inputs["calibration"] + inputs["test"], dtype=torch.float64)
+    observed = None
+    if name == "windowed_missing":
+        observed = torch.ones(len(residuals), 1, 1, dtype=torch.bool)
+        observed[len(inputs["calibration"]) + parameters["missing_test_outcome"]] = False
+        residuals = residuals * observed.flatten()
     forecasts = torch.arange(len(residuals), dtype=torch.float64)[:, None, None] + 10
     archive = ResidualArchive(
         residuals=residuals[:, None, None],
+        observed=observed,
         origins=torch.tensor(inputs["origins"]),
         steps=torch.tensor([1]),
         forecasts=forecasts,
@@ -42,6 +49,10 @@ def test_against_scalar_published_equations(name):
         method = NexCP(decay=parameters["decay"], alpha=alpha)
     elif name == "aci":
         method = ACI(gamma=parameters["gamma"], alpha=alpha)
+    elif name.startswith("windowed"):
+        method = WindowedCP(parameters["window"], alpha=alpha)
+    elif name == "mondrian":
+        method = MondrianCP(Phase(parameters["period"]), alpha=alpha)
     else:
         method = SplitCP(score=scores[name]() if name in scores else None, alpha=alpha)
     if name == "normalized_fitted":

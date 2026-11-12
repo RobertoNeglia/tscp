@@ -87,9 +87,14 @@ class AgACI(ConformalPredictor):
     Deviation:
         The point forecasts are supplied and never refitted. Experts use tscp's
         conformal order statistic, with an expanding calibration pool unless
-        another source is supplied. As in the paper, an expert level at or above
-        one gives a zero-radius interval. Endpoint replacement values are required
-        explicitly instead of using the reference experiments' data-specific constants.
+        another source is supplied; the authors' experiment code instead refits the
+        forecaster on a rolling window and takes an interpolated empirical quantile
+        of its calibration residuals, without the test-point correction. The
+        reference fixture therefore checks the endpoint aggregation against OPERA and
+        the experts against these conventions. As in the paper, an expert level at or
+        above one gives a zero-radius interval around the forecast. Endpoint
+        replacement values are required explicitly instead of using the reference
+        experiments' data-specific constants.
         Missing outcomes do not update experts or aggregators. Only one-step, univariate archives
         and the absolute-residual expert score are supported.
 

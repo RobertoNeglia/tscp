@@ -7,7 +7,7 @@ from torch import Tensor
 
 from tscp.online.base import OnlineUpdate
 from tscp.online.scorecaster import Scorecaster
-from tscp.quantile import ScoreDistribution
+from tscp.quantile import EmpiricalDistribution, ScoreDistribution
 from tscp.registry import register
 
 
@@ -16,22 +16,33 @@ class PIDUpdate(OnlineUpdate):
     """Conformal PI/PID control (Angelopoulos, Candès & Tibshirani, NeurIPS 2023).
 
     The threshold is a quantile tracker plus a tangent error integrator and, when
-    supplied, a causal scorecast. Tracker and integral state start at zero. The
-    integrator uses the cumulative errors before the current release, matching the
-    lagged integrator in the authors' ``quantile_integrator_log_scorecaster`` routine.
-    Infinite tangent values are preserved rather than clipped.
+    supplied, a causal scorecast. Tracker and integral state start at zero, unless
+    ``warm_start`` is set. The integrator uses the cumulative errors before the current
+    release, matching the lagged integrator in the authors'
+    ``quantile_integrator_log_scorecaster`` routine. Infinite tangent values are
+    preserved rather than clipped.
+
+    With ``warm_start``, the first threshold is the split-conformal quantile of the
+    calibration scores available before the first query (the largest of them when they
+    are too few for that quantile), and the tracker absorbs the first scorecast. The
+    rate-scaling range starts from the latest ``lr_window`` of those scores. The
+    integrator still starts at zero and counts test errors only. Without calibration
+    scores, the warm start leaves the tracker at zero.
 
     Deviation from the reference implementation: arbitrary delayed and missing outcomes
-    are processed per kept element, and rates depend only on previously released test
-    scores. A nested scorecaster may initialize from available calibration history.
+    are processed per kept element. Without ``warm_start``, rates depend only on
+    previously released test scores. A nested scorecaster may initialize from available
+    calibration history.
 
     Args:
         lr: Nonnegative tracker learning rate.
         csat: Positive tangent saturation scale.
         ki: Nonnegative integral gain; zero disables error integration.
-        proportional_lr: Scale the rate by the range of previous observed test scores.
+        proportional_lr: Scale the rate by the range of previous observed scores.
         lr_window: Most recent scores in the rate-scaling range.
         scorecaster: Optional nested online scorecaster; None gives PI control.
+        warm_start: Start the tracker and the rate-scaling range from the calibration
+            scores instead of zero; False reproduces the reference implementation.
     """
 
     def __init__(
@@ -42,6 +53,7 @@ class PIDUpdate(OnlineUpdate):
         proportional_lr: bool = True,
         lr_window: int = 100,
         scorecaster: Scorecaster | None = None,
+        warm_start: bool = False,
     ):
         super().__init__()
         for name, value in (("lr", lr), ("ki", ki)):
@@ -59,9 +71,11 @@ class PIDUpdate(OnlineUpdate):
         self.proportional_lr = bool(proportional_lr)
         self.lr_window = lr_window
         self.scorecaster = scorecaster
+        self.warm_start = bool(warm_start)
         for name in ("target", "tracker", "error_sum", "integral", "count", "scorecast"):
             self.register_buffer(name, None, persistent=False)
         self._history: list[list[float]] = []
+        self._warm: Tensor | None = None
 
     @property
     def is_trainable(self) -> bool:
@@ -77,14 +91,33 @@ class PIDUpdate(OnlineUpdate):
         for name in ("tracker", "error_sum", "integral", "count", "scorecast"):
             setattr(self, name, torch.zeros_like(self.target))
         self._history = [[] for _ in range(self.target.numel())]
+        self._warm = None
         if self.scorecaster is not None:
             self.scorecaster.reset(self.target, device)
 
     def initialize(
         self, scores: Tensor, origins: Tensor, target_times: Tensor, valid: Tensor | None
     ) -> None:
+        if self.warm_start:
+            self._warm_start(scores, valid)
         if self.scorecaster is not None:
             self.scorecaster.initialize(scores, origins, target_times, valid)
+
+    def _warm_start(self, scores: Tensor, valid: Tensor | None) -> None:
+        """Record each element's calibration quantile and seed its rate-scaling range."""
+        flat = scores.reshape(len(scores), -1).double()
+        mask = torch.ones_like(scores, dtype=torch.bool) if valid is None else valid
+        mask = mask.broadcast_to(scores.shape).reshape(len(scores), -1)
+        start = torch.full_like(self.target, torch.nan).reshape(-1)
+        for element, alpha in enumerate(self.target.reshape(-1).tolist()):
+            values = flat[mask[:, element], element]  # in origin order
+            if not len(values):
+                continue
+            ordered = values.sort().values
+            quantile = EmpiricalDistribution(ordered).threshold(alpha)
+            start[element] = quantile if torch.isfinite(quantile) else ordered[-1]
+            self._history[element] = values[-self.lr_window :].tolist()
+        self._warm = start.reshape(self.target.shape)  # NaN: no calibration scores
 
     def prepare_query(self, t: int, *, origin: int, target_times: Tensor) -> None:
         if self.scorecaster is not None:
@@ -95,6 +128,11 @@ class PIDUpdate(OnlineUpdate):
             ):
                 raise ValueError("scorecasts must be finite tensors with the kept shape")
             self.scorecast = self.scorecast.to(self.target)
+        if self._warm is not None:
+            # The first threshold, tracker plus scorecast, is the calibration quantile.
+            warmed = ~self._warm.isnan()
+            self.tracker = torch.where(warmed, self._warm - self.scorecast, self.tracker)
+            self._warm = None
 
     def threshold(self, t: int, distribution: ScoreDistribution) -> Tensor:
         return self.tracker + self.integral + self.scorecast

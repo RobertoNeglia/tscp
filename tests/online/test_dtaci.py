@@ -45,6 +45,35 @@ def test_deterministic_algorithm_matches_independent_scalar_reference():
         )
 
 
+UPSTREAM = json.loads((FIXTURE.parent / "dtaci_reference.json").read_text())
+
+
+@pytest.mark.parametrize("case", UPSTREAM["cases"], ids=lambda case: case["name"])
+def test_deterministic_algorithm_matches_the_authors_r_code(case):
+    assert UPSTREAM["reference_revision"] == "09ab1674bc579b46d0e54b3525059c0591be342f"
+    update = DtACIUpdate(gammas=case["gammas"], eta=case["eta"], sigma=case["sigma"])
+    update.reset(torch.tensor(case["alpha"], dtype=torch.float64), torch.device("cpu"))
+    gammas = torch.tensor(case["gammas"], dtype=torch.float64)
+    tolerance = UPSTREAM["tolerance"]
+    for t, beta in enumerate(case["betas"]):
+        mean_gamma = (update.probabilities * gammas).sum()
+        assert float(mean_gamma) == pytest.approx(case["mean_gammas"][t], **tolerance_of(tolerance))
+        threshold = update.threshold(t, ContinuousDistribution())
+        level = 1 - float(threshold)
+        assert level == pytest.approx(case["combined_levels"][t], **tolerance_of(tolerance))
+        update.observe(
+            t,
+            torch.tensor(1 - beta, dtype=torch.float64),
+            threshold,
+            torch.tensor(True),
+            torch.tensor(beta, dtype=torch.float64),
+        )
+
+
+def tolerance_of(tolerance):
+    return {"abs": tolerance["atol"], "rel": tolerance["rtol"]}
+
+
 def test_one_expert_is_aci():
     dtaci, aci = DtACIUpdate(gammas=[0.02]), ACIUpdate(gamma=0.02)
     for update in (dtaci, aci):

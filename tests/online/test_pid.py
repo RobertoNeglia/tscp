@@ -83,6 +83,54 @@ def test_pi_keeps_the_update_contract():
     check_online_update(lambda: PIDUpdate(lr=0.1, proportional_lr=False))
 
 
+@pytest.mark.parametrize("proportional_lr", [False, True])
+def test_warm_start_keeps_the_update_contract(proportional_lr):
+    check_online_update(lambda: PIDUpdate(proportional_lr=proportional_lr, warm_start=True))
+
+
+def test_warm_start_begins_at_the_calibration_quantile_and_scale():
+    scores = torch.tensor([[3.0, 9.0], [1.0, 2.0], [4.0, 7.0], [2.0, 5.0], [5.0, 1.0]])
+    valid = torch.ones_like(scores, dtype=torch.bool)
+    valid[4, 1] = False  # never initializes the second element
+    update = PIDUpdate(lr=0.5, ki=0, lr_window=3, warm_start=True)
+    update.reset(torch.tensor([0.4, 0.5], dtype=torch.float64), torch.device("cpu"))
+    update.initialize(scores, torch.arange(5), torch.arange(1, 6)[:, None], valid)
+    update.prepare_query(0, origin=5, target_times=torch.tensor([6, 6]))
+    # ceil(0.6 * 6) = 4th of [1, 2, 3, 4, 5]; ceil(0.5 * 5) = 3rd of [2, 5, 7, 9]
+    torch.testing.assert_close(update.threshold(0, None), torch.tensor([4.0, 7.0]).double())
+    assert update._history == [[4.0, 2.0, 5.0], [2.0, 7.0, 5.0]]
+    update.observe(0, torch.tensor([10.0, 0.0]), torch.tensor([4.0, 7.0]), torch.tensor([True] * 2))
+    # Rates scale by the calibration range: miss at 0.6, cover at -0.5.
+    expected = torch.tensor([4.0 + 0.5 * 3 * 0.6, 7.0 - 0.5 * 5 * 0.5]).double()
+    torch.testing.assert_close(update.threshold(1, None), expected)
+
+
+def test_warm_start_absorbs_the_first_scorecast_and_handles_short_history():
+    caster = FixedScorecaster([2.5, 3.0])
+    update = PIDUpdate(ki=0, proportional_lr=False, scorecaster=caster, warm_start=True)
+    update.reset(torch.tensor([0.1, 0.1], dtype=torch.float64), torch.device("cpu"))
+    scores = torch.tensor([[1.0, 4.0], [2.0, 6.0]])
+    valid = torch.tensor([[True, False], [True, False]])
+    update.initialize(scores, torch.arange(2), torch.arange(1, 3)[:, None], valid)
+    update.prepare_query(0, origin=2, target_times=torch.tensor([3, 3]))
+    # Two scores are too few for the 90% conformal quantile: the largest is used.
+    # Without valid calibration scores, the tracker stays at zero.
+    torch.testing.assert_close(update.threshold(0, None), torch.tensor([2.0, 2.5]).double())
+
+
+def test_pi_preset_warm_start_first_threshold_is_split_conformal():
+    from tscp.methods import ConformalPI, SplitCP
+    from tscp.testing import synthetic_archive
+
+    archive = synthetic_archive(horizon=1, num_origins=200)
+    split = SplitCP(alpha=0.1).calibrate(archive).predict(archive)
+    warm = ConformalPI(alpha=0.1, warm_start=True).calibrate(archive).predict(archive)
+    cold = ConformalPI(alpha=0.1).calibrate(archive).predict(archive)
+    assert float(warm.upper[0]) == float(split.upper[0])
+    assert float(cold.upper[0]) == 0
+    torch.testing.assert_close(warm.lower[0], -warm.upper[0])
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [

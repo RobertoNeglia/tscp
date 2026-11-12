@@ -1,5 +1,6 @@
 """Ensemble batch prediction intervals from cached out-of-bag forecasts."""
 
+import math
 from collections import deque
 from collections.abc import Iterator
 from typing import Self
@@ -75,21 +76,63 @@ class _ResidualIntervalMethod(ConformalPredictor):
     def reset_online(self) -> None:
         """Reset replay state; this method keeps its history local to each prediction."""
 
-    def _windows(self, test: ResidualArchive) -> Iterator[tuple[int, Tensor, Tensor]]:
+    def _windows(
+        self, test: ResidualArchive, *, grid: bool = False
+    ) -> Iterator[tuple[int, Tensor, Tensor]]:
+        """Yield each query with the residual history released before it.
+
+        Without ``grid``, the history holds the latest released rows. With ``grid``, it
+        holds the latest slots of the origin grid, whose spacing is the greatest common
+        divisor of the calibration and test origin spacings: an origin absent from both
+        splits, such as a row between them, becomes a missing slot, so adjacent history
+        entries are always adjacent in time. Each query's history then ends at the slot
+        just before its origin.
+        """
         from tscp.methods.engine import release_schedule
 
         size = self.window_size if self.window_size is not None else len(self.pool_scores)
-        history = deque(self.pool_scores[:, 0, 0].unbind(), maxlen=size)
-        observed = deque(self.pool_valid[:, 0, 0].unbind(), maxlen=size)
+        history: deque[Tensor] = deque(maxlen=size)
+        observed: deque[Tensor] = deque(maxlen=size)
+        empty = test.residuals.new_zeros(())
+        absent = torch.zeros((), dtype=torch.bool, device=test.device)
+        present = torch.ones((), dtype=torch.bool, device=test.device)
+        origins = torch.cat((self.pool_origins, test.origins)).tolist()
+        cadence = math.gcd(*(b - a for a, b in zip(origins, origins[1:], strict=False))) or 1
+        last: int | None = None
+
+        def pad(through: int) -> None:
+            # Absent origins up to and including ``through`` become missing slots.
+            nonlocal last
+            if grid and last is not None and through > last:
+                for _ in range(min((through - last) // cadence, size)):
+                    history.append(empty)
+                    observed.append(absent)
+                last = through
+
+        def append(origin: int, value: Tensor, valid: Tensor) -> None:
+            nonlocal last
+            pad(origin - cadence)
+            history.append(value)
+            observed.append(valid)
+            last = origin
+
+        for origin, value, valid in zip(
+            self.pool_origins.tolist(),
+            self.pool_scores[:, 0, 0].unbind(),
+            self.pool_valid[:, 0, 0].unbind(),
+            strict=True,
+        ):
+            append(origin, value, valid)
+        test_origins = test.origins.tolist()
         for u, released in release_schedule(test.origins, test.steps):
             for t, _ in released:
                 # Test labels enter the history only at their target's release time.
-                history.append(test.residuals[t, 0, 0])
-                observed.append(
-                    torch.ones((), dtype=torch.bool, device=test.device)
-                    if test.observed is None
-                    else test.observed[t, 0, 0]
+                append(
+                    test_origins[t],
+                    test.residuals[t, 0, 0],
+                    present if test.observed is None else test.observed[t, 0, 0],
                 )
+            pad(test_origins[u] - cadence)
             yield u, torch.stack(tuple(history)), torch.stack(tuple(observed))
 
 

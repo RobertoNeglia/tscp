@@ -47,6 +47,42 @@ def test_refit_schedule_missing_history_and_forecast_leads(monkeypatch):
     assert caster._values[1] == [100, 101, 103]
 
 
+def test_short_run_after_a_gap_keeps_forecasting_from_the_earlier_run(monkeypatch):
+    fitted, leads = [], []
+
+    class FakeTheta:
+        def __init__(self, values, **kwargs):
+            self.values = [float(value) for value in values]
+
+        def fit(self):
+            fitted.append(self.values)
+            return self
+
+        def forecast(self, steps):
+            leads.append(steps)
+            return SimpleNamespace(iloc=[self.values[-1] + steps])
+
+    monkeypatch.setattr(
+        "tscp.online.scorecaster.require", lambda *args: SimpleNamespace(ThetaModel=FakeTheta)
+    )
+    caster = ThetaScorecaster(min_history=3, refit_every=1)
+    caster.reset(torch.tensor([0.1]), torch.device("cpu"))
+    # Calibration targets at times 1..5; the split gap leaves times 6 and 7 unobserved.
+    caster.initialize(
+        torch.arange(10.0, 15.0)[:, None], torch.arange(5), torch.arange(1, 6)[:, None], None
+    )
+    origins = [7, 8, 9]
+    for t, origin in enumerate(origins):
+        prediction = caster.predict(t, origin=origin, target_times=torch.tensor([origin + 1]))
+        if t < 2:
+            # Runs [8] and [8, 9] are too short: the calibration run still forecasts.
+            assert prediction.item() == 14 + origin + 1 - 5
+        caster.observe(t, torch.tensor([20.0 + origin + 1]), torch.tensor([True]))
+    assert fitted == [[10, 11, 12, 13, 14]]  # one fit: the selected run did not change
+    assert caster.predict(3, origin=10, target_times=torch.tensor([11])).item() == 31
+    assert fitted[-1] == [28, 29, 30] and leads == [3, 4, 5, 1]
+
+
 def test_reset_and_config_remove_replay_history():
     caster = ThetaScorecaster(min_history=3)
     caster.reset(torch.tensor([0.1]), torch.device("cpu"))

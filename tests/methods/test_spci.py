@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from tscp.data import ResidualArchive
+from tscp.data import ResidualArchive, SplitPlan
 from tscp.imports import has_module
 from tscp.methods.spci import SPCI
 from tscp.quantile.forest import QuantileForest
@@ -103,6 +103,56 @@ def test_spci_skips_invalid_training_pairs_and_cannot_bridge_missing_query_lags(
     missing_last = replace(archive, observed=observed, residuals=archive.residuals * observed)
     region = SPCI(lags=2, window_size=8).calibrate(missing_last).predict(missing_last)
     assert torch.isneginf(region.lower[:2]).all() and torch.isposinf(region.upper[:2]).all()
+
+
+def grid_archive(origins, calibration, test):
+    origins = torch.as_tensor(origins)
+    return ResidualArchive(
+        residuals=origins.double()[:, None, None],  # each residual equals its origin
+        origins=origins,
+        steps=torch.tensor([1]),
+        splits=SplitPlan({"calibration": torch.as_tensor(calibration), "test": test}),
+    )
+
+
+@pytest.mark.parametrize(
+    "origins,calibration,test,cadence,absent",
+    [
+        # A row between the splits belongs to neither.
+        (torch.arange(60), torch.arange(30), torch.arange(31, 60), 1, 30),
+        # An origin is missing from the archive.
+        (torch.cat([torch.arange(40), torch.arange(41, 61)]), torch.arange(30), None, 1, 40),
+        # Origins on a grid of two base steps, with one missing.
+        (
+            torch.cat([torch.arange(0, 80, 2), torch.arange(82, 122, 2)]),
+            torch.arange(30),
+            None,
+            2,
+            80,
+        ),
+    ],
+)
+def test_spci_lags_stay_adjacent_on_the_origin_grid(
+    monkeypatch, origins, calibration, test, cadence, absent
+):
+    calls = spy_forest(monkeypatch)
+    test = torch.arange(len(calibration), len(origins)) if test is None else test
+    archive = grid_archive(origins, calibration, test)
+    lags = 3
+    region = SPCI(lags=lags, window_size=12).calibrate(archive).predict(archive)
+    query_origins = archive.split("test").origins.tolist()
+    fitted = [u for u, o in enumerate(query_origins) if not o - lags * cadence <= absent < o]
+    unbounded = [u for u in range(len(query_origins)) if u not in fitted]
+    assert unbounded and len(calls) == len(fitted)
+    assert torch.isneginf(region.lower[unbounded]).all()
+    assert torch.isposinf(region.upper[unbounded]).all()
+    for u, (features, targets, query) in zip(fitted, calls, strict=True):
+        origin = query_origins[u]
+        expected = torch.arange(origin - lags * cadence, origin, cadence, dtype=torch.float64)
+        assert torch.equal(query, expected)
+        pairs = torch.cat((features, targets[:, None]), dim=1)
+        assert (pairs.diff(dim=1) == cadence).all()
+        assert not (pairs == absent).any()
 
 
 def test_spci_warmup_and_parameter_validation(monkeypatch):

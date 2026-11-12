@@ -43,9 +43,12 @@ class ThetaScorecaster(Scorecaster):
 
     Uses ``statsmodels.tsa.forecasting.theta.ThetaModel`` from the optional ``pid``
     extra. Models fit on CPU; predictions return to the controller's device. Settings
-    stay fixed during replay. Only the latest contiguous history on the observed time
-    grid is fitted; an insufficient history yields a zero scorecast. This avoids
-    compressing missing observations into adjacent time steps.
+    stay fixed during replay. Each fit uses one contiguous run of history on the observed
+    time grid, so missing observations are never compressed into adjacent time steps:
+    the latest run with enough observations. While a newer run after a gap, such as the
+    gap between the calibration and test splits, is still too short, forecasts continue
+    from the older run at a longer lead. Without any long enough run the scorecast is
+    zero.
 
     Deviation from the reference PID implementation: available calibration scores seed
     the scorecaster, and every released score may enter the next scheduled refit. Target
@@ -93,6 +96,7 @@ class ThetaScorecaster(Scorecaster):
         self._counts: list[int] = []
         self._fit_counts: list[int] = []
         self._fit_times: list[int | None] = []
+        self._fit_spans: list[tuple[int, int] | None] = []
         self._pending: dict[int, tuple[Tensor, Tensor]] = {}
         self._cadence: int | None = None
         self._last_origin: int | None = None
@@ -106,9 +110,23 @@ class ThetaScorecaster(Scorecaster):
         self._counts = [0] * size
         self._fit_counts = [0] * size
         self._fit_times = [None] * size
+        self._fit_spans = [None] * size
         self._pending.clear()
         self._cadence = None
         self._last_origin = None
+
+    @staticmethod
+    def _segment(times: list[int], cadence: int, required: int) -> tuple[int, int] | None:
+        """Return ``(start, end)`` of the latest contiguous run of ``required`` or more."""
+        end = len(times)
+        while end >= required:
+            start = end - 1
+            while start > 0 and times[start] - times[start - 1] == cadence:
+                start -= 1
+            if end - start >= required:
+                return start, end
+            end = start
+        return None
 
     def _add_cadence(self, gap: int) -> None:
         if gap > 0:
@@ -161,22 +179,24 @@ class ThetaScorecaster(Scorecaster):
             times, values = self._times[element], self._values[element]
             if cadence is None or len(times) < required:
                 continue
-            start = len(times) - 1
-            while start > 0 and times[start] - times[start - 1] == cadence:
-                start -= 1
-            if len(times) - start < required:
+            segment = self._segment(times, cadence, required)
+            if segment is None:
                 continue
+            start, end = segment
+            span = (times[start], times[end - 1])
             if self._models[element] is None or (
                 self._counts[element] - self._fit_counts[element] >= self.refit_every
+                and span != self._fit_spans[element]
             ):
                 theta = require("statsmodels.tsa.forecasting.theta", "pid")
                 self._models[element] = theta.ThetaModel(
-                    torch.tensor(values[start:], dtype=torch.float64).numpy(),
+                    torch.tensor(values[start:end], dtype=torch.float64).numpy(),
                     period=self.period,
                     deseasonalize=self.period > 1,
                 ).fit()
                 self._fit_counts[element] = self._counts[element]
-                self._fit_times[element] = times[-1]
+                self._fit_times[element] = span[1]
+                self._fit_spans[element] = span
             lead = int(target_time) - self._fit_times[element]
             if lead <= 0 or lead % cadence:
                 raise ValueError("scorecast target times must be future points on the history grid")
