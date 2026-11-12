@@ -80,6 +80,7 @@ include = [
     "tests",
     "docs",
     "examples",
+    "tscp-logo-assets",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

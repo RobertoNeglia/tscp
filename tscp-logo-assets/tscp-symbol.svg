@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="640"
+  viewBox="0 0 1060 640" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">tscp — standalone symbol</title>
+  <desc id="desc">An irregular charcoal time series inside two strictly nested orange prediction bands, widening toward a slim mechanical caliper. Rail width 42; signal stroke 22; visible signal-tip clearance 22 to the inner right edge.</desc>
+  <!-- Flat vector artwork. The empty canvas is transparent. -->
+  <g id="prediction-bands">
+    <path id="outer-band" fill="#FFAD45" d="M 65 280
+      C 97 270 129 251 158 251
+      C 189 251 213 257 245 257
+      C 297 257 414 149 480 149
+      C 545 149 583 199 639 199
+      C 673 199 712 144 738 144
+      C 770 144 787 171 787 214
+      L 787 398
+      C 787 441 770 468 738 468
+      C 712 468 673 489 639 489
+      C 583 489 545 391 480 391
+      C 414 391 297 413 245 413
+      C 213 413 189 391 158 391
+      C 129 391 97 398 65 408
+      C 33 418 15 384 15 344
+      C 15 306 33 290 65 280 Z"/>
+    <path id="inner-band" fill="#FF7900" d="M 65 310
+      C 97 300 129 284 158 284
+      C 189 284 213 292 245 292
+      C 297 292 414 205 480 205
+      C 545 205 583 265 639 265
+      C 673 265 712 220 738 220
+      C 765 220 779 235 779 259
+      L 779 353
+      C 779 377 765 392 738 392
+      C 712 392 673 423 639 423
+      C 583 423 545 335 480 335
+      C 414 335 297 378 245 378
+      C 213 378 189 358 158 358
+      C 129 358 97 368 65 378
+      C 43 384.875 29 366 29 344
+      C 29 326 43 316.875 65 310 Z"/>
+  </g>
+  <path id="time-series" d="M 65 344
+      C 97 334 129 321 158 321
+      C 189 321 213 335 245 335
+      C 297 335 414 270 480 270
+      C 545 270 583 344 639 344
+      C 673 344 712 306 738 306
+      L 746 306"
+    fill="none" stroke="#393B36" stroke-width="22"
+    stroke-linecap="round" stroke-linejoin="round"/>
+  <g id="caliper" fill="#393B36">
+    <path id="caliper-rail" d="M 945,13 L 955,13 C 963.837,13 971,20.163 971,29 L 971,610 C 971,618.837 963.837,626 955,626 L 945,626 C 936.163,626 929,618.837 929,610 L 929,29 C 929,20.163 936.163,13 945,13 Z"/>
+    <path id="fixed-jaw" d="M 750,138 L 929,78 L 992,78 C 996,78 999,81 999,85 L 999,89 L 1044,89 L 1032,101 C 1024,108 1017,111 1006,111 L 977,111 C 973,111 971,113 971,117 L 971,133 L 751,150 C 743,150 741,141 750,138 Z"/>
+    <path id="moving-jaw" d="M 746,468 L 929,486 L 929,496 L 1044,496 L 1032,508 C 1024,515 1018,518 1006,518 L 971,518 L 929,545 L 744,480 C 736,477 738,467 746,468 Z"/>
+    <path id="slider" d="M 923,477 L 977,477 C 982.523,477 987,481.477 987,487 L 987,537 C 987,542.523 982.523,547 977,547 L 923,547 C 917.477,547 913,542.523 913,537 L 913,487 C 913,481.477 917.477,477 923,477 Z"/>
+  </g>
+</svg>
